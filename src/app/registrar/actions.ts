@@ -16,7 +16,9 @@ export async function registrarCliente(
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/");
+  const aceiteTermos = formData.get("aceite_termos") === "on";
 
+  if (!aceiteTermos) return { error: "É preciso aceitar os Termos e Políticas para criar conta." };
   if (!nome) return { error: "Nome é obrigatório." };
   if (!telefone) return { error: "Telefone é obrigatório." };
   if (!email || !email.includes("@")) return { error: "E-mail inválido." };
@@ -41,7 +43,7 @@ export async function registrarCliente(
 
   const { error: clientError } = await supabase
     .from("clients")
-    .insert({ user_id: user.id, nome, telefone, email });
+    .insert({ user_id: user.id, nome, telefone, email, termos_aceitos_em: new Date().toISOString() });
   if (clientError) return { error: `Não foi possível salvar seu cadastro: ${clientError.message}` };
 
   redirect(next);

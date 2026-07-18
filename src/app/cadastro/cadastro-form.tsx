@@ -216,6 +216,27 @@ export function CadastroForm({ bairros }: { bairros: Bairro[] }) {
         )}
       </Section>
 
+      <label className="flex items-start gap-2 text-sm text-foreground/80">
+        <input
+          type="checkbox"
+          name="aceite_termos"
+          required
+          className="mt-0.5 accent-primary"
+        />
+        <span>
+          Li e aceito os{" "}
+          <a
+            href="/termos"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary hover:underline"
+          >
+            Termos e Políticas
+          </a>{" "}
+          do SaúdeAgora.
+        </span>
+      </label>
+
       <button
         type="submit"
         disabled={pending}

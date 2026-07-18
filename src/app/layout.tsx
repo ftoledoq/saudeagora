@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Sora, Inter } from "next/font/google";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
 
 const sora = Sora({
@@ -42,8 +43,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         <SiteHeader />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 pb-16">{children}</main>
         <SiteFooter />
+        <TabBar />
       </body>
     </html>
   );

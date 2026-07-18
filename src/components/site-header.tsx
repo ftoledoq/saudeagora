@@ -1,32 +1,10 @@
 import Link from "next/link";
 import { BrandMark } from "@/lib/brand-mark";
-import { createClient } from "@/lib/supabase/server";
 
-const NAV_LINKS = [
-  { href: "/buscar", label: "Buscar profissionais" },
-  { href: "/cadastro", label: "Sou profissional" },
-];
-
-export async function SiteHeader() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  let temContaCliente = false;
-  if (user) {
-    const { data: client } = await supabase
-      .from("clients")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    temContaCliente = !!client;
-  }
-
-  const navLinks = temContaCliente
-    ? [...NAV_LINKS, { href: "/minhas-reservas", label: "Minhas reservas" }]
-    : NAV_LINKS;
-
+// Navegação principal (Buscar/Agenda/Perfil) mora na tab bar inferior
+// (src/components/tab-bar.tsx) — o header agora só carrega a marca e o
+// CTA de captação de profissional, que não tem lugar na tab bar.
+export function SiteHeader() {
   return (
     <header className="border-b border-border bg-background/95 backdrop-blur sticky top-0 z-40">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -40,23 +18,11 @@ export async function SiteHeader() {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-6 sm:flex">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm font-medium text-foreground/80 transition-colors hover:text-foreground"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-
         <Link
-          href="/buscar"
-          className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
+          href="/cadastro"
+          className="rounded-full border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
         >
-          Agendar agora
+          Sou profissional
         </Link>
       </div>
     </header>

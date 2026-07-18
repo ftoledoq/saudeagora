@@ -55,8 +55,10 @@ export async function cadastrarProfissional(
   const identidadeFile = formData.get("identidade") as File | null;
   const crefFile = formData.get("cref") as File | null;
   const crefValidade = str(formData, "cref_validade");
+  const aceiteTermos = formData.get("aceite_termos") === "on";
 
   // Validação — nunca confiar só no que o formulário no navegador já checou.
+  if (!aceiteTermos) return { error: "É preciso aceitar os Termos e Políticas para se cadastrar." };
   if (!email || !email.includes("@")) return { error: "E-mail inválido." };
   if (password.length < 8) return { error: "Senha precisa ter pelo menos 8 caracteres." };
   if (!nome) return { error: "Nome completo é obrigatório." };
@@ -121,6 +123,7 @@ export async function cadastrarProfissional(
       raio_atendimento_km: raioAtendimentoKm,
       preco_base: preco,
       bio,
+      termos_aceitos_em: new Date().toISOString(),
     })
     .select("id")
     .single();
