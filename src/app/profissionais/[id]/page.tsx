@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar } from "@/components/avatar";
-import type { Bairro } from "@/types/database";
 
 const SERVICE_LABEL: Record<string, string> = {
   personal_trainer: "Personal Trainer",
@@ -17,13 +16,18 @@ type Servico = {
   descricao: string | null;
 };
 
-type ProfessionalProfile = {
+// Colunas seguras só — ver migration 0013 (professionais_publicos já
+// filtra aprovado+CREF válido, sem SELECT direto em professionals/addresses
+// por anon/authenticated, que vazava cpf/telefone/email/rua/referencia).
+type ProfessionalPublico = {
   id: string;
   nome: string;
   bio: string | null;
   foto_storage_key: string | null;
-  endereco: { bairro: Bairro | null } | null;
-  services: Servico[];
+  bairro_id: string;
+  bairro_nome: string;
+  bairro_cidade: string;
+  bairro_estado: string;
 };
 
 type ReviewRow = {
@@ -42,22 +46,25 @@ export default async function PerfilProfissionalPage({
   const supabase = await createClient();
 
   const { data: professional } = await supabase
-    .from("professionals")
-    .select(
-      "id, nome, bio, foto_storage_key, endereco:addresses(bairro:bairros(id, nome, cidade, estado, latitude, longitude)), services(tipo, preco, duracao_min, descricao)"
-    )
+    .from("professionais_publicos")
+    .select("*")
     .eq("id", id)
-    .eq("status", "aprovado")
-    .maybeSingle<ProfessionalProfile>();
+    .maybeSingle<ProfessionalPublico>();
 
-  // A RLS já garante que só profissional aprovado + CREF válido é visível
-  // aqui — se não veio nada, ou não existe ou não está mais publicável
-  // (ex: CREF venceu). Mesma página de "não encontrado" nos dois casos.
+  // A view já filtra aprovado + CREF válido — se não veio nada, ou não
+  // existe ou não está mais publicável (ex: CREF venceu). Mesma página de
+  // "não encontrado" nos dois casos.
   if (!professional) notFound();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const { data: services } = await supabase
+    .from("services")
+    .select("tipo, preco, duracao_min, descricao")
+    .eq("professional_id", professional.id)
+    .returns<Servico[]>();
 
   let fotoUrl: string | null = null;
   if (professional.foto_storage_key) {
@@ -82,7 +89,6 @@ export default async function PerfilProfissionalPage({
       ? listaReviews.reduce((soma, r) => soma + r.nota, 0) / listaReviews.length
       : null;
 
-  const bairro = professional.endereco?.bairro;
   const agendarHref = `/profissionais/${professional.id}/agendar`;
   const ctaHref = user ? agendarHref : `/login?next=${encodeURIComponent(agendarHref)}`;
 
@@ -106,11 +112,9 @@ export default async function PerfilProfissionalPage({
               ✓ Verificado
             </span>
           </div>
-          {bairro && (
-            <p className="mt-1 text-sm text-foreground/60">
-              {bairro.nome} — {bairro.cidade}/{bairro.estado}
-            </p>
-          )}
+          <p className="mt-1 text-sm text-foreground/60">
+            {professional.bairro_nome} — {professional.bairro_cidade}/{professional.bairro_estado}
+          </p>
         </div>
       </div>
 
@@ -121,7 +125,7 @@ export default async function PerfilProfissionalPage({
       <section className="mt-8">
         <h2 className="font-display text-lg font-semibold">Serviços</h2>
         <div className="mt-3 flex flex-col gap-3">
-          {professional.services.map((s, i) => (
+          {(services ?? []).map((s, i) => (
             <div
               key={i}
               className="flex items-center justify-between rounded-2xl border border-border bg-white p-4"

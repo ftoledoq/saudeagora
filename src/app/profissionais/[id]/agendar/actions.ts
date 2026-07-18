@@ -68,13 +68,15 @@ export async function criarAgendamento(
     return { error: `Não foi possível criar o agendamento: ${bookingError.message}` };
   }
 
-  const { data: professional } = await supabase
-    .from("professionals")
-    .select("email")
-    .eq("id", professionalId)
-    .maybeSingle();
-  if (professional) {
-    await avisarNovoPedido({ professionalEmail: professional.email, clienteNome: client.nome });
+  // Não há SELECT direto em professionals aqui — email é uma coluna
+  // sensível (migration 0013 fechou o vazamento de PII pública). A função
+  // abaixo só devolve o e-mail se existir de fato um booking entre o
+  // cliente autenticado e esse profissional, o que acabamos de criar.
+  const { data: professionalEmail } = await supabase.rpc("professional_email_for_own_booking", {
+    p_professional_id: professionalId,
+  });
+  if (professionalEmail) {
+    await avisarNovoPedido({ professionalEmail, clienteNome: client.nome });
   }
 
   redirect(`/profissionais/${professionalId}/agendar/solicitado`);

@@ -6,7 +6,6 @@ import type { Availability, Bairro } from "@/types/database";
 type ProfessionalForAgendar = {
   id: string;
   nome: string;
-  services: { id: string; tipo: string; preco: number; duracao_min: number }[];
 };
 
 export default async function AgendarPage({
@@ -31,18 +30,18 @@ export default async function AgendarPage({
   if (!client) redirect(`/registrar?next=${encodeURIComponent(currentPath)}`);
 
   const { data: professional } = await supabase
-    .from("professionals")
-    .select("id, nome, services(id, tipo, preco, duracao_min)")
+    .from("professionais_publicos")
+    .select("id, nome")
     .eq("id", id)
-    .eq("status", "aprovado")
     .maybeSingle<ProfessionalForAgendar>();
   if (!professional) notFound();
 
-  const servico = professional.services[0];
-  if (!servico) notFound();
-
   const hoje = new Date().toISOString().slice(0, 10);
-  const [{ data: slots }, { data: bairros }] = await Promise.all([
+  const [{ data: servicos }, { data: slots }, { data: bairros }] = await Promise.all([
+    supabase
+      .from("services")
+      .select("id, tipo, preco, duracao_min")
+      .eq("professional_id", professional.id),
     supabase
       .from("availability")
       .select("*")
@@ -54,6 +53,9 @@ export default async function AgendarPage({
       .returns<Availability[]>(),
     supabase.from("bairros").select("*").order("cidade").order("nome").returns<Bairro[]>(),
   ]);
+
+  const servico = servicos?.[0];
+  if (!servico) notFound();
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">

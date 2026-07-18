@@ -24,17 +24,27 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
 }
 
 type Servico = {
+  professional_id: string;
   tipo: string;
   preco: number;
   duracao_min: number;
   descricao: string | null;
 };
 
-type ProfessionalResult = {
+// Colunas seguras só (id/nome/bio/foto/bairro) — nunca cpf/telefone/email
+// (professionals) nem rua/referencia (addresses). Ver migration 0013:
+// professionais_publicos é uma view que já filtra por aprovado+CREF válido,
+// sem depender de SELECT direto na tabela professionals/addresses por
+// anon/authenticated (que vazava a linha inteira).
+type ProfessionalPublico = {
   id: string;
   nome: string;
-  endereco: { bairro: Bairro | null } | null;
-  services: Servico[];
+  bairro_id: string;
+  bairro_nome: string;
+  bairro_cidade: string;
+  bairro_estado: string;
+  bairro_latitude: number;
+  bairro_longitude: number;
 };
 
 type Card = {
@@ -66,16 +76,18 @@ export default async function BuscarPage({
   } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: bairros }, { data: profissionais }] = await Promise.all([
+  const [{ data: bairros }, { data: profissionais }, { data: services }] = await Promise.all([
     supabase.from("bairros").select("*").order("cidade").order("nome").returns<Bairro[]>(),
-    supabase
-      .from("professionals")
-      .select(
-        "id, nome, endereco:addresses(bairro:bairros(id, nome, cidade, estado, latitude, longitude)), services(tipo, preco, duracao_min, descricao)"
-      )
-      .eq("status", "aprovado")
-      .returns<ProfessionalResult[]>(),
+    supabase.from("professionais_publicos").select("*").returns<ProfessionalPublico[]>(),
+    supabase.from("services").select("professional_id, tipo, preco, duracao_min, descricao").returns<Servico[]>(),
   ]);
+
+  const servicosPorProfissional = new Map<string, Servico[]>();
+  for (const s of services ?? []) {
+    const lista = servicosPorProfissional.get(s.professional_id) ?? [];
+    lista.push(s);
+    servicosPorProfissional.set(s.professional_id, lista);
+  }
 
   const todosBairros = bairros ?? [];
 
@@ -96,10 +108,16 @@ export default async function BuscarPage({
 
   const cards: Card[] = [];
   for (const p of profissionais ?? []) {
-    const bairroProf = p.endereco?.bairro;
-    if (!bairroProf) continue;
-    if (bairroProf.cidade !== cidadeSelecionada) continue;
-    for (const s of p.services) {
+    if (p.bairro_cidade !== cidadeSelecionada) continue;
+    const bairroProf: Bairro = {
+      id: p.bairro_id,
+      nome: p.bairro_nome,
+      cidade: p.bairro_cidade,
+      estado: p.bairro_estado,
+      latitude: p.bairro_latitude,
+      longitude: p.bairro_longitude,
+    };
+    for (const s of servicosPorProfissional.get(p.id) ?? []) {
       if (tipo && s.tipo !== tipo) continue;
       if (precoMax && s.preco > precoMax) continue;
       cards.push({
