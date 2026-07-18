@@ -5,9 +5,18 @@ import {
   removerDisponibilidade,
   confirmarAgendamento,
   recusarAgendamento,
+  reportarClienteNaoCompareceu,
+  responderAvaliacao,
 } from "./actions";
 import type { Availability } from "@/types/database";
 import { formatDataHora } from "@/lib/format";
+
+const JANELA_NO_SHOW_MIN = 30;
+
+function dentroDaJanelaNoShow(dataHoraIso: string): boolean {
+  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
+  return minutosDesde >= 0 && minutosDesde <= JANELA_NO_SHOW_MIN;
+}
 
 const SERVICE_LABEL: Record<string, string> = {
   personal_trainer: "Personal Trainer",
@@ -26,6 +35,13 @@ const STATUS_LABEL: Record<string, string> = {
   no_show_profissional: "Você não compareceu",
 };
 
+type ReviewRow = {
+  id: string;
+  nota: number;
+  comentario: string | null;
+  resposta_profissional: string | null;
+};
+
 type BookingRow = {
   id: string;
   data_hora: string;
@@ -37,6 +53,7 @@ type BookingRow = {
     rua: string;
     bairro: { nome: string; cidade: string; estado: string } | null;
   } | null;
+  review: ReviewRow | null;
 };
 
 export default async function AgendaPage() {
@@ -76,7 +93,7 @@ export default async function AgendaPage() {
     supabase
       .from("bookings")
       .select(
-        "id, data_hora, status, valor, cliente:clients(nome, telefone), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado))"
+        "id, data_hora, status, valor, cliente:clients(nome, telefone), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
       )
       .eq("professional_id", professional.id)
       .order("data_hora", { ascending: true })
@@ -150,20 +167,74 @@ export default async function AgendaPage() {
       {outros.length > 0 && (
         <div className="mt-10">
           <h2 className="font-display text-lg font-semibold">Histórico</h2>
-          <div className="mt-3 flex flex-col gap-2">
-            {outros.map((b) => (
-              <div
-                key={b.id}
-                className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm"
-              >
-                <span>
-                  {b.cliente?.nome} · {formatDataHora(b.data_hora)}
-                </span>
-                <span className="text-foreground/60">
-                  {STATUS_LABEL[b.status] ?? b.status}
-                </span>
-              </div>
-            ))}
+          <div className="mt-3 flex flex-col gap-3">
+            {outros.map((b) => {
+              const podeReportarNoShow =
+                b.status === "confirmado" && dentroDaJanelaNoShow(b.data_hora);
+
+              return (
+                <div
+                  key={b.id}
+                  className="rounded-xl border border-border bg-white px-4 py-3 text-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <span>
+                      {b.cliente?.nome} · {formatDataHora(b.data_hora)}
+                    </span>
+                    <span className="text-foreground/60">
+                      {STATUS_LABEL[b.status] ?? b.status}
+                    </span>
+                  </div>
+
+                  {podeReportarNoShow && (
+                    <form action={reportarClienteNaoCompareceu} className="mt-2">
+                      <input type="hidden" name="id" value={b.id} />
+                      <button
+                        type="submit"
+                        className="text-xs font-medium text-error hover:underline"
+                      >
+                        Cliente não compareceu
+                      </button>
+                    </form>
+                  )}
+
+                  {b.review && (
+                    <div className="mt-3 border-t border-border pt-3">
+                      <p className="text-xs font-semibold text-primary">
+                        {"★".repeat(b.review.nota)}
+                        {"☆".repeat(5 - b.review.nota)}
+                      </p>
+                      {b.review.comentario && (
+                        <p className="mt-1 text-sm text-foreground/70">
+                          {b.review.comentario}
+                        </p>
+                      )}
+                      {b.review.resposta_profissional ? (
+                        <p className="mt-2 text-xs text-foreground/60">
+                          <strong>Sua resposta:</strong> {b.review.resposta_profissional}
+                        </p>
+                      ) : (
+                        <form action={responderAvaliacao} className="mt-2 flex gap-2">
+                          <input type="hidden" name="review_id" value={b.review.id} />
+                          <input
+                            type="text"
+                            name="resposta"
+                            placeholder="Responder publicamente (opcional)"
+                            className="flex-1 rounded-lg border border-border bg-white px-3 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                          />
+                          <button
+                            type="submit"
+                            className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90"
+                          >
+                            Enviar
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

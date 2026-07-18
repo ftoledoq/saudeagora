@@ -26,6 +26,13 @@ type ProfessionalProfile = {
   services: Servico[];
 };
 
+type ReviewRow = {
+  nota: number;
+  comentario: string | null;
+  resposta_profissional: string | null;
+  booking: { cliente: { nome: string } | null } | null;
+};
+
 export default async function PerfilProfissionalPage({
   params,
 }: {
@@ -59,6 +66,21 @@ export default async function PerfilProfissionalPage({
       .createSignedUrl(professional.foto_storage_key, 300);
     fotoUrl = data?.signedUrl ?? null;
   }
+
+  const { data: reviews } = await supabase
+    .from("reviews")
+    .select(
+      "nota, comentario, resposta_profissional, booking:bookings!inner(cliente:clients(nome))"
+    )
+    .eq("booking.professional_id", professional.id)
+    .order("created_at", { ascending: false })
+    .returns<ReviewRow[]>();
+
+  const listaReviews = reviews ?? [];
+  const mediaAvaliacao =
+    listaReviews.length > 0
+      ? listaReviews.reduce((soma, r) => soma + r.nota, 0) / listaReviews.length
+      : null;
 
   const bairro = professional.endereco?.bairro;
   const agendarHref = `/profissionais/${professional.id}/agendar`;
@@ -120,10 +142,42 @@ export default async function PerfilProfissionalPage({
       </section>
 
       <section className="mt-8">
-        <h2 className="font-display text-lg font-semibold">Avaliações</h2>
-        <p className="mt-2 text-sm text-foreground/60">
-          Ainda sem avaliações — seja o primeiro a agendar.
-        </p>
+        <div className="flex items-center gap-2">
+          <h2 className="font-display text-lg font-semibold">Avaliações</h2>
+          {mediaAvaliacao !== null && (
+            <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
+              {mediaAvaliacao.toFixed(1)} ★ ({listaReviews.length})
+            </span>
+          )}
+        </div>
+
+        {listaReviews.length === 0 ? (
+          <p className="mt-2 text-sm text-foreground/60">
+            Ainda sem avaliações — seja o primeiro a agendar.
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-3">
+            {listaReviews.map((r, i) => (
+              <div key={i} className="rounded-2xl border border-border bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{r.booking?.cliente?.nome ?? "Cliente"}</p>
+                  <p className="text-sm text-primary">
+                    {"★".repeat(r.nota)}
+                    {"☆".repeat(5 - r.nota)}
+                  </p>
+                </div>
+                {r.comentario && (
+                  <p className="mt-1 text-sm text-foreground/70">{r.comentario}</p>
+                )}
+                {r.resposta_profissional && (
+                  <p className="mt-2 border-t border-border pt-2 text-xs text-foreground/60">
+                    <strong>Resposta do profissional:</strong> {r.resposta_profissional}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mt-8">

@@ -1,12 +1,32 @@
 import Link from "next/link";
 import { BrandMark } from "@/lib/brand-mark";
+import { createClient } from "@/lib/supabase/server";
 
 const NAV_LINKS = [
   { href: "/buscar", label: "Buscar profissionais" },
   { href: "/cadastro", label: "Sou profissional" },
 ];
 
-export function SiteHeader() {
+export async function SiteHeader() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let temContaCliente = false;
+  if (user) {
+    const { data: client } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    temContaCliente = !!client;
+  }
+
+  const navLinks = temContaCliente
+    ? [...NAV_LINKS, { href: "/minhas-reservas", label: "Minhas reservas" }]
+    : NAV_LINKS;
+
   return (
     <header className="border-b border-border bg-background/95 backdrop-blur sticky top-0 z-40">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -21,7 +41,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 sm:flex">
-          {NAV_LINKS.map((link) => (
+          {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}

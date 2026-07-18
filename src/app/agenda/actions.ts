@@ -113,3 +113,38 @@ export async function recusarAgendamento(formData: FormData) {
 
   revalidatePath("/agenda");
 }
+
+// A janela de 30 min é reforçada pela RLS (trigger guard_booking_status_transition,
+// migration 0011) — este UPDATE só é aceito pelo Postgres dentro da janela e a
+// partir do status "confirmado". Não confiar só na ausência do botão na UI.
+export async function reportarClienteNaoCompareceu(formData: FormData) {
+  const supabase = await createClient();
+  const professional = await getOwnProfessional(supabase);
+
+  const id = String(formData.get("id") ?? "");
+  const { error } = await supabase
+    .from("bookings")
+    .update({ status: "no_show_cliente" })
+    .eq("id", id)
+    .eq("professional_id", professional.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/agenda");
+}
+
+export async function responderAvaliacao(formData: FormData) {
+  const supabase = await createClient();
+  await getOwnProfessional(supabase);
+
+  const reviewId = String(formData.get("review_id") ?? "");
+  const resposta = String(formData.get("resposta") ?? "").trim();
+  if (!resposta) throw new Error("Escreva uma resposta antes de enviar.");
+
+  const { error } = await supabase
+    .from("reviews")
+    .update({ resposta_profissional: resposta })
+    .eq("id", reviewId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/agenda");
+}
