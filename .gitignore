@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# credenciais de contas de teste persistentes (is_test_data) — nunca commitar
+TESTE_CREDENCIAIS.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
