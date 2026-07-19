@@ -111,6 +111,18 @@ export default async function PerfilProfissionalPage({
             <span className="flex items-center gap-1 rounded-full bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
               ✓ Verificado
             </span>
+            {/* Tela 2 do documento de wireframes (US-04): cold-start de
+                avaliação (sem nota ainda) mostra "Novo no SaúdeAgora" no
+                lugar de nota vazia/zero, mesmo peso visual do selo
+                Verificado — para não penalizar profissional recém-aprovado.
+                Lacuna identificada em auditoria visual (2026-07-18): nunca
+                foi implementado (confirmado via git log -S, não é
+                regressão), só existia texto simples lá embaixo. */}
+            {mediaAvaliacao === null && (
+              <span className="flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">
+                ✨ Novo no SaúdeAgora
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-foreground/60">
             {professional.bairro_nome} — {professional.bairro_cidade}/{professional.bairro_estado}
