@@ -3,6 +3,7 @@ import { Sora, Inter } from "next/font/google";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TabBarClient } from "@/components/tab-bar-client";
+import { SplashScreen } from "@/components/splash-screen";
 import "./globals.css";
 
 const sora = Sora({
@@ -42,6 +43,7 @@ export default function RootLayout({
       className={`${sora.variable} ${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
+        <SplashScreen />
         <SiteHeader />
         <main className="flex-1 pb-16">{children}</main>
         <SiteFooter />

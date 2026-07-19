@@ -31,3 +31,20 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* Splash screen própria (não o splash nativo do PWA, que fica estático por
+   limitação do sistema) — traço do pulso se desenha em loop enquanto a
+   sessão inicial carrega. pathLength="100" na polyline normaliza o
+   comprimento do traço pra 100 unidades, então o dasharray/dashoffset aqui
+   não depende da geometria exata dos pontos do BrandMark. */
+@keyframes splash-pulse-draw {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  55% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
