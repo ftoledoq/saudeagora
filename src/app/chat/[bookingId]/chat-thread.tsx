@@ -75,7 +75,12 @@ export function ChatThread({
     const formData = new FormData();
     formData.set("booking_id", bookingId);
     formData.set("conteudo", conteudo);
-    await enviarMensagem(formData);
+    const inserida = await enviarMensagem(formData);
+    if (inserida) {
+      setMensagens((atual) =>
+        atual.some((m) => m.id === inserida.id) ? atual : [...atual, inserida]
+      );
+    }
     setEnviando(false);
   }
 
