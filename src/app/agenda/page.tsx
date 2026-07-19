@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   adicionarDisponibilidade,
@@ -13,6 +14,10 @@ import { formatDataHora } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
 
 const JANELA_NO_SHOW_MIN = 30;
+
+// Mesmo conjunto de status que libera o chat na RLS (booking_chat_liberado,
+// migration 0017).
+const STATUS_LIBERA_CHAT = ["confirmado", "concluido", "no_show_cliente", "no_show_profissional"];
 
 function dentroDaJanelaNoShow(dataHoraIso: string): boolean {
   const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
@@ -208,6 +213,15 @@ export default async function AgendaPage() {
                       {STATUS_LABEL[b.status] ?? b.status}
                     </span>
                   </div>
+
+                  {STATUS_LIBERA_CHAT.includes(b.status) && (
+                    <Link
+                      href={`/chat/${b.id}`}
+                      className="mt-2 inline-block text-xs font-medium text-primary hover:underline"
+                    >
+                      Conversar com {b.cliente?.nome}
+                    </Link>
+                  )}
 
                   {podeReportarNoShow && (
                     <form action={reportarClienteNaoCompareceu} className="mt-2">

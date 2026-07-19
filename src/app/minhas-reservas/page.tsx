@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatDataHora } from "@/lib/format";
 import { reportarProfissionalNaoCompareceu } from "./actions";
 import { AvaliarForm } from "./avaliar-form";
 import { ShareCardButton } from "@/components/share-card-button";
+
+// Mesmo conjunto de status que libera o chat na RLS (booking_chat_liberado,
+// migration 0017) — não duplicar essa lista sem motivo, mas não dá pra
+// importar SQL aqui, só manter as duas em sincronia manualmente.
+const STATUS_LIBERA_CHAT = ["confirmado", "concluido", "no_show_cliente", "no_show_profissional"];
 
 const SERVICE_LABEL: Record<string, string> = {
   personal_trainer: "Personal Trainer",
@@ -153,6 +159,14 @@ export default async function MinhasReservasPage() {
                 <p className="mt-2 text-sm">
                   {formatDataHora(b.data_hora)} · R$ {b.valor}
                 </p>
+                {STATUS_LIBERA_CHAT.includes(b.status) && (
+                  <Link
+                    href={`/chat/${b.id}`}
+                    className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+                  >
+                    Conversar com {b.professional?.nome}
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -188,6 +202,15 @@ export default async function MinhasReservasPage() {
                 <p className="mt-2 text-sm">
                   {formatDataHora(b.data_hora)} · R$ {b.valor}
                 </p>
+
+                {STATUS_LIBERA_CHAT.includes(b.status) && (
+                  <Link
+                    href={`/chat/${b.id}`}
+                    className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+                  >
+                    Conversar com {b.professional?.nome}
+                  </Link>
+                )}
 
                 {reportavel && (
                   <form action={reportarProfissionalNaoCompareceu} className="mt-2">
