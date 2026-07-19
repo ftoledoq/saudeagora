@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 type TabItem = {
   href: string;
@@ -32,8 +34,62 @@ const ICONS: Record<TabItem["icon"], React.ReactNode> = {
   ),
 };
 
-export function TabBarClient({ items }: { items: TabItem[] }) {
+// Resolve o papel (cliente/profissional) inteiramente no navegador, depois
+// de montar — de propósito, NÃO como Server Component lendo cookies() no
+// layout raiz. Uma tab bar persistente que depende de recálculo dinâmico
+// do servidor a cada navegação é recriada/reconciliada a cada troca de
+// rota; isso é a causa mais provável do bug de "precisa tocar 2 vezes"
+// (o nó DOM pode ser substituído no meio de um toque). Como componente
+// 100% cliente, a tab bar monta uma única vez e nunca mais é recriada
+// pelo roteamento.
+export function TabBarClient() {
   const pathname = usePathname();
+  const [agendaHref, setAgendaHref] = useState("/login?next=/agenda");
+  const [perfilHref, setPerfilHref] = useState("/login?next=/perfil");
+
+  useEffect(() => {
+    let cancelado = false;
+    const supabase = createClient();
+
+    async function resolverPapel() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelado) return;
+
+      setPerfilHref("/perfil");
+
+      const { data: professional } = await supabase
+        .from("professionals")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (cancelado) return;
+
+      if (professional) {
+        setAgendaHref("/agenda");
+        return;
+      }
+
+      const { data: client } = await supabase
+        .from("clients")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!cancelado) setAgendaHref(client ? "/minhas-reservas" : "/login?next=/minhas-reservas");
+    }
+
+    resolverPapel();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  const items: TabItem[] = [
+    { href: "/buscar", label: "Buscar", icon: "buscar" },
+    { href: agendaHref, label: "Agenda", icon: "agenda" },
+    { href: perfilHref, label: "Perfil", icon: "perfil" },
+  ];
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur">

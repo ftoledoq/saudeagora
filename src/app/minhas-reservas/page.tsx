@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDataHora } from "@/lib/format";
 import { reportarProfissionalNaoCompareceu } from "./actions";
 import { AvaliarForm } from "./avaliar-form";
+import { ShareCardButton } from "@/components/share-card-button";
 
 const SERVICE_LABEL: Record<string, string> = {
   personal_trainer: "Personal Trainer",
@@ -30,6 +31,17 @@ function elegívelParaAvaliar(dataHoraIso: string, status: string, jaAvaliado: b
   return minutosDesde >= 0 && minutosDesde <= JANELA_AVALIACAO_DIAS * 24 * 60;
 }
 
+// Mesma janela e condição da avaliação (status ainda "confirmado", sessão
+// já deve ter acontecido) — reaproveitada de propósito, sem schema novo. Se
+// um no-show for reportado depois, status muda e essa condição já deixa de
+// bater na renderização seguinte (recalculada do banco a cada carregamento,
+// nunca guardada) — não precisa de lógica extra pra "esconder de novo".
+function elegívelParaCompartilhar(dataHoraIso: string, status: string): boolean {
+  if (status !== "confirmado") return false;
+  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
+  return minutosDesde >= 0 && minutosDesde <= JANELA_AVALIACAO_DIAS * 24 * 60;
+}
+
 function podeReportarNoShow(dataHoraIso: string, status: string): boolean {
   if (status !== "confirmado") return false;
   const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
@@ -40,11 +52,15 @@ function agora(): number {
   return Date.now();
 }
 
+// "professional" não é mais um nested embed direto de bookings->professionals
+// (ver comentário na query abaixo) — vem de um join feito em JS contra a
+// view pública, por isso o tipo aqui já reflete o formato final montado.
 type BookingRow = {
   id: string;
   data_hora: string;
   status: string;
   valor: number;
+  professional_id: string;
   professional: { id: string; nome: string } | null;
   service: { tipo: string } | null;
   review: { id: string; nota: number; comentario: string | null } | null;
@@ -75,14 +91,34 @@ export default async function MinhasReservasPage() {
     );
   }
 
-  const { data: bookings } = await supabase
+  // Não dá pra fazer nested embed direto em professionals aqui (bookings ->
+  // professionals): desde a migration 0013, não existe mais policy pública
+  // ampla na tabela professionals (foi removida por vazar cpf/telefone/
+  // email) — só a view professionais_publicos (colunas seguras) é
+  // acessível de forma genérica. Buscar separado e juntar em JS evita
+  // reabrir uma policy de SELECT ampla só pra mostrar o nome.
+  const { data: bookingsRaw } = await supabase
     .from("bookings")
     .select(
-      "id, data_hora, status, valor, professional:professionals(id, nome), service:services(tipo), review:reviews(id, nota, comentario)"
+      "id, data_hora, status, valor, professional_id, service:services(tipo), review:reviews(id, nota, comentario)"
     )
     .eq("cliente_id", client.id)
     .order("data_hora", { ascending: false })
-    .returns<BookingRow[]>();
+    .returns<Omit<BookingRow, "professional">[]>();
+
+  const idsProfissionais = [...new Set((bookingsRaw ?? []).map((b) => b.professional_id))];
+  const { data: profissionaisPublicos } =
+    idsProfissionais.length > 0
+      ? await supabase.from("professionais_publicos").select("id, nome").in("id", idsProfissionais)
+      : { data: [] as { id: string; nome: string }[] };
+  const nomePorProfissional = new Map((profissionaisPublicos ?? []).map((p) => [p.id, p.nome]));
+
+  const bookings: BookingRow[] = (bookingsRaw ?? []).map((b) => ({
+    ...b,
+    professional: nomePorProfissional.has(b.professional_id)
+      ? { id: b.professional_id, nome: nomePorProfissional.get(b.professional_id)! }
+      : { id: b.professional_id, nome: "Profissional" },
+  }));
 
   const agoraMs = agora();
   const proximos = (bookings ?? []).filter((b) => new Date(b.data_hora).getTime() >= agoraMs);
@@ -134,6 +170,7 @@ export default async function MinhasReservasPage() {
           {anteriores.map((b) => {
             const avaliavel = elegívelParaAvaliar(b.data_hora, b.status, !!b.review);
             const reportavel = podeReportarNoShow(b.data_hora, b.status);
+            const compartilhavel = elegívelParaCompartilhar(b.data_hora, b.status);
 
             return (
               <div key={b.id} className="rounded-2xl border border-border bg-white p-5">
@@ -162,6 +199,14 @@ export default async function MinhasReservasPage() {
                       Profissional não compareceu
                     </button>
                   </form>
+                )}
+
+                {compartilhavel && b.professional && b.service && (
+                  <ShareCardButton
+                    profissionalNome={b.professional.nome}
+                    servicoTipo={b.service.tipo}
+                    dataHoraIso={b.data_hora}
+                  />
                 )}
 
                 {b.review ? (
