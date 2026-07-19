@@ -49,6 +49,26 @@ export function RegistrarForm({ next }: { next: string }) {
         <input id="password" name="password" type="password" required minLength={8} className={inputClass} />
       </div>
 
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="foto" className={labelClass}>
+          Foto de perfil (opcional, JPG ou PNG até 5MB)
+        </label>
+        <input id="foto" name="foto" type="file" accept="image/jpeg,image/png" className={inputClass} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="bio" className={labelClass}>
+          Bio (opcional)
+        </label>
+        <textarea
+          id="bio"
+          name="bio"
+          rows={3}
+          placeholder="Conte um pouco sobre seus objetivos ou preferências."
+          className={inputClass}
+        />
+      </div>
+
       <label className="flex items-start gap-2 text-sm text-foreground/80">
         <input type="checkbox" name="aceite_termos" required className="mt-0.5 accent-primary" />
         <span>

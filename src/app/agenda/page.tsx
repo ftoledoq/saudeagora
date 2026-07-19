@@ -10,6 +10,7 @@ import {
 } from "./actions";
 import type { Availability } from "@/types/database";
 import { formatDataHora } from "@/lib/format";
+import { Avatar } from "@/components/avatar";
 
 const JANELA_NO_SHOW_MIN = 30;
 
@@ -47,7 +48,7 @@ type BookingRow = {
   data_hora: string;
   status: string;
   valor: number;
-  cliente: { nome: string; telefone: string } | null;
+  cliente: { nome: string; telefone: string; bio: string | null; foto_storage_key: string | null } | null;
   service: { tipo: string; duracao_min: number } | null;
   endereco: {
     rua: string;
@@ -93,7 +94,7 @@ export default async function AgendaPage() {
     supabase
       .from("bookings")
       .select(
-        "id, data_hora, status, valor, cliente:clients(nome, telefone), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
+        "id, data_hora, status, valor, cliente:clients(nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
       )
       .eq("professional_id", professional.id)
       .order("data_hora", { ascending: true })
@@ -102,6 +103,22 @@ export default async function AgendaPage() {
 
   const pendentes = (bookings ?? []).filter((b) => b.status === "solicitado");
   const outros = (bookings ?? []).filter((b) => b.status !== "solicitado");
+
+  // Foto do cliente no pedido pendente — dá contexto pro profissional
+  // antes de aceitar, mesmo raciocínio de já mostrar o perfil do
+  // profissional pro cliente antes de agendar. Só busca signed URL pros
+  // pedidos pendentes (é onde a decisão de aceitar/recusar acontece).
+  const fotoUrlPorBooking = new Map<string, string>();
+  await Promise.all(
+    pendentes
+      .filter((b) => b.cliente?.foto_storage_key)
+      .map(async (b) => {
+        const { data } = await supabase.storage
+          .from("client-photos")
+          .createSignedUrl(b.cliente!.foto_storage_key!, 300);
+        if (data?.signedUrl) fotoUrlPorBooking.set(b.id, data.signedUrl);
+      })
+  );
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
@@ -122,14 +139,20 @@ export default async function AgendaPage() {
         {pendentes.map((b) => (
           <div key={b.id} className="rounded-2xl border border-primary bg-primary-light p-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="font-display font-semibold">{b.cliente?.nome}</p>
-                <p className="text-sm text-foreground/60">{b.cliente?.telefone}</p>
+              <div className="flex items-center gap-3">
+                <Avatar nome={b.cliente?.nome ?? "?"} photoUrl={fotoUrlPorBooking.get(b.id) ?? null} size={44} />
+                <div>
+                  <p className="font-display font-semibold">{b.cliente?.nome}</p>
+                  <p className="text-sm text-foreground/60">{b.cliente?.telefone}</p>
+                </div>
               </div>
               <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-primary">
                 {b.service && (SERVICE_LABEL[b.service.tipo] ?? b.service.tipo)}
               </span>
             </div>
+            {b.cliente?.bio && (
+              <p className="mt-2 text-sm text-foreground/70">{b.cliente.bio}</p>
+            )}
             <p className="mt-3 text-sm">
               {formatDataHora(b.data_hora)} · R$ {b.valor}
             </p>

@@ -89,6 +89,17 @@ export default async function PerfilProfissionalPage({
       ? listaReviews.reduce((soma, r) => soma + r.nota, 0) / listaReviews.length
       : null;
 
+  // "Atendimento realizado" = mesma heurística já usada pra elegibilidade
+  // de avaliação/card compartilhável (confirmado + horário já passado, ou
+  // concluido se algum dia isso passar a ser setado de verdade) — contagem
+  // calculada, não campo manual, então nunca pode ficar desatualizada.
+  // Via RPC (security definer, migration 0016): bookings não tem policy
+  // pública nenhuma, uma query direta sempre voltaria 0 pra visitante
+  // anônimo, que é justamente quem mais precisa ver essa prova social.
+  const { data: atendimentosRealizados } = await supabase.rpc("atendimentos_realizados_count", {
+    p_professional_id: professional.id,
+  });
+
   const agendarHref = `/profissionais/${professional.id}/agendar`;
   const ctaHref = user ? agendarHref : `/login?next=${encodeURIComponent(agendarHref)}`;
 
@@ -163,6 +174,12 @@ export default async function PerfilProfissionalPage({
           {mediaAvaliacao !== null && (
             <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
               {mediaAvaliacao.toFixed(1)} ★ ({listaReviews.length})
+            </span>
+          )}
+          {!!atendimentosRealizados && atendimentosRealizados > 0 && (
+            <span className="rounded-full bg-border px-2.5 py-1 text-xs font-semibold text-foreground/70">
+              {atendimentosRealizados} atendimento{atendimentosRealizados === 1 ? "" : "s"} realizado
+              {atendimentosRealizados === 1 ? "" : "s"}
             </span>
           )}
         </div>

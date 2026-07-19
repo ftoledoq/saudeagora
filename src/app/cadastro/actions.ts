@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isValidCpf, normalizeCpf } from "@/lib/cpf";
+import { validarFoto, extensaoArquivo as fileExtension } from "@/lib/foto-upload";
 import type { ServiceTipo } from "@/types/database";
 
 export type CadastroFormState = {
@@ -10,8 +11,6 @@ export type CadastroFormState = {
 };
 
 const SERVICE_TIPOS: ServiceTipo[] = ["personal_trainer", "massagem", "pilates"];
-const FOTO_TIPOS_ACEITOS = ["image/jpeg", "image/png"];
-const FOTO_TAMANHO_MAX_BYTES = 5 * 1024 * 1024;
 
 function str(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
@@ -19,13 +18,6 @@ function str(formData: FormData, key: string): string {
 
 function num(formData: FormData, key: string): number {
   return Number(str(formData, key).replace(",", "."));
-}
-
-function fileExtension(file: File): string {
-  const fromName = file.name.split(".").pop();
-  if (fromName && fromName.length <= 5) return fromName.toLowerCase();
-  const fromType = file.type.split("/").pop();
-  return fromType ?? "bin";
 }
 
 export async function cadastrarProfissional(
@@ -71,10 +63,8 @@ export async function cadastrarProfissional(
   if (!(duracaoMin > 0)) return { error: "Duração da sessão precisa ser maior que zero." };
   if (!(raioAtendimentoKm > 0)) return { error: "Raio de atendimento precisa ser maior que zero." };
   if (temFoto) {
-    if (!FOTO_TIPOS_ACEITOS.includes(fotoFile!.type))
-      return { error: "Foto precisa ser JPG ou PNG." };
-    if (fotoFile!.size > FOTO_TAMANHO_MAX_BYTES)
-      return { error: "Foto precisa ter até 5MB." };
+    const erroFoto = validarFoto(fotoFile!);
+    if (erroFoto) return { error: erroFoto };
   }
   if (!identidadeFile || identidadeFile.size === 0)
     return { error: "Envie o documento de identidade." };
