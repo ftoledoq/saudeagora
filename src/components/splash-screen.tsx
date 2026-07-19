@@ -9,11 +9,15 @@ import { createClient } from "@/lib/supabase/client";
 // entre navegações client-side no App Router) — nunca reaparece ao trocar
 // de rota dentro do app, só numa carga de página nova de verdade.
 //
-// De propósito, sem duração fixa arbitrária: some assim que a sessão inicial
-// (getSession, primeira leitura real de dados que o app precisa) resolver,
-// não depois de um setTimeout artificial. getSession() lê de storage local
-// primeiro (rápido) mas ainda é a leitura real que o resto do app depende —
-// não é um placeholder de espera.
+// Duração mínima de 1.2s (tempo pro traço do pulso ser percebido) corrida em
+// paralelo com o carregamento real (getSession) — não em série, e não um
+// timer fixo sozinho: quando a sessão resolve rápido (comum, lê de storage
+// local), o mínimo é quem segura a splash; quando a sessão demora mais que
+// 1.2s, o mínimo já passou e é o carregamento real quem segura. Nenhum dos
+// dois é descartado, os dois precisam terminar — sem teto artificial.
+const DURACAO_MINIMA_MS = 1200;
+const DURACAO_FADE_MS = 300;
+
 export function SplashScreen() {
   const [pronto, setPronto] = useState(false);
   const [removido, setRemovido] = useState(false);
@@ -22,8 +26,20 @@ export function SplashScreen() {
     let cancelado = false;
     const supabase = createClient();
 
-    supabase.auth.getSession().then(() => {
-      if (!cancelado) setPronto(true);
+    const carregamento = supabase.auth.getSession();
+    const minimo = new Promise((resolve) => setTimeout(resolve, DURACAO_MINIMA_MS));
+
+    Promise.all([carregamento, minimo]).then(() => {
+      if (cancelado) return;
+      setPronto(true);
+      // Timeout explícito em vez de depender de onTransitionEnd — o evento
+      // de transição do CSS pode não disparar de forma confiável em todo
+      // navegador/contexto (ex: aba em background, transição interrompida),
+      // deixando o elemento preso no DOM indefinidamente mesmo já invisível
+      // (pointer-events-none evita bloquear clique, mas não é limpo).
+      setTimeout(() => {
+        if (!cancelado) setRemovido(true);
+      }, DURACAO_FADE_MS);
     });
 
     return () => {
@@ -36,9 +52,6 @@ export function SplashScreen() {
   return (
     <div
       aria-hidden="true"
-      onTransitionEnd={() => {
-        if (pronto) setRemovido(true);
-      }}
       className={`fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-primary transition-opacity duration-300 ${
         pronto ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
