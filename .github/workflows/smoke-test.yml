@@ -1,16 +1,23 @@
 name: Smoke test pós-deploy
 
 # Dispara em deployment_status — evento que o app do Vercel no GitHub emite
-# quando um deploy muda de estado. Roda só quando o deploy termina com
-# sucesso (state == success), contra a URL real desse deploy
-# (target_url) — nunca contra localhost, nunca contra "produção" genérica,
-# sempre o deploy que acabou de sair.
+# quando um deploy muda de estado. Roda só quando o deploy de PRODUÇÃO
+# termina com sucesso.
+#
+# Usa o domínio público fixo (saudeagora.vercel.app), não
+# deployment_status.target_url: a URL específica de cada deploy
+# (ex: saudeagora-xxxxx-ft-oledo.vercel.app) fica atrás da autenticação do
+# próprio Vercel (SSO da equipe) e nunca chega a mostrar o app de verdade
+# pra um runner sem sessão — confirmado ao vivo nesta investigação (a URL
+# de deploy individual redireciona pra tela de login do Vercel, não pro
+# SaúdeAgora). O domínio público é o que qualquer usuário real acessa,
+# então é o que precisa ser testado.
 on:
   deployment_status:
 
 jobs:
   smoke:
-    if: github.event.deployment_status.state == 'success'
+    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'production'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,7 +34,7 @@ jobs:
 
       - name: Rodar smoke test contra o deploy
         env:
-          SMOKE_BASE_URL: ${{ github.event.deployment_status.target_url }}
+          SMOKE_BASE_URL: https://saudeagora.vercel.app
           SMOKE_CLIENTE_EMAIL: ${{ secrets.SMOKE_CLIENTE_EMAIL }}
           SMOKE_CLIENTE_SENHA: ${{ secrets.SMOKE_CLIENTE_SENHA }}
           SMOKE_PROFISSIONAL_EMAIL: ${{ secrets.SMOKE_PROFISSIONAL_EMAIL }}
