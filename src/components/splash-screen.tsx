@@ -1,28 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 // Splash própria do app (diferente do splash nativo do PWA, que continua
 // estático — limitação do sistema operacional, não dá pra animar aquele).
-// Mostrada uma única vez, na primeira montagem do layout raiz (que persiste
-// entre navegações client-side no App Router) — nunca reaparece ao trocar
-// de rota dentro do app, só numa carga de página nova de verdade.
 //
-// Duração mínima de 1.2s (tempo pro traço do pulso ser percebido) corrida em
-// paralelo com o carregamento real (getSession) — não em série, e não um
-// timer fixo sozinho: quando a sessão resolve rápido (comum, lê de storage
-// local), o mínimo é quem segura a splash; quando a sessão demora mais que
-// 1.2s, o mínimo já passou e é o carregamento real quem segura. Nenhum dos
-// dois é descartado, os dois precisam terminar — sem teto artificial.
-const DURACAO_MINIMA_MS = 1200;
+// Duração mínima curta (só o suficiente pro traço do pulso ser percebido,
+// não um bloqueio de interação real) corrida em paralelo com o carregamento
+// real (getSession) via Promise.all — quando a sessão resolve rápido, o
+// mínimo é quem segura a splash; quando demora mais, é o carregamento real
+// quem segura, sem teto artificial.
+const DURACAO_MINIMA_MS = 550;
 const DURACAO_FADE_MS = 300;
+
+// sessionStorage, não um estado em memória: precisa sobreviver a um reload
+// de página de verdade, que é exatamente o que acontece quando um PWA volta
+// de segundo plano depois de o sistema operacional suspender/descartar o
+// processo (comportamento comum em iOS/Android sob pressão de memória) —
+// sessionStorage persiste nesse caso porque o navegador ainda reconhece a
+// mesma aba/sessão de navegação, e só é limpo quando o app é fechado de
+// verdade. Isso é o que garante "nunca reaparece em retomada de sessão já
+// ativa", que uma verificação em memória (useState/useRef) não conseguiria
+// cobrir, já que memória não sobrevive a um reload do processo.
+const CHAVE_SESSION = "saudeagora-splash-exibida";
+
+function splashJaExibidaNestaSessao(): boolean {
+  try {
+    return sessionStorage.getItem(CHAVE_SESSION) === "1";
+  } catch {
+    // Storage bloqueado (ex: modo privado restrito) — degrada mostrando a
+    // splash de novo, nunca quebra o carregamento do app por causa disso.
+    return false;
+  }
+}
+
+function marcarSplashExibida() {
+  try {
+    sessionStorage.setItem(CHAVE_SESSION, "1");
+  } catch {
+    // Idem — falha silenciosa, não é crítico.
+  }
+}
 
 export function SplashScreen() {
   const [pronto, setPronto] = useState(false);
   const [removido, setRemovido] = useState(false);
 
+  // useLayoutEffect (não useEffect): precisa rodar ANTES do navegador
+  // pintar o primeiro frame. Numa retomada de sessão já ativa, isso evita
+  // qualquer flash visível da splash — ela nunca chega a ser pintada na
+  // tela, em vez de aparecer e sumir num piscar.
+  useLayoutEffect(() => {
+    if (splashJaExibidaNestaSessao()) setRemovido(true);
+  }, []);
+
   useEffect(() => {
+    if (removido) return;
     let cancelado = false;
     const supabase = createClient();
 
@@ -38,14 +72,17 @@ export function SplashScreen() {
       // deixando o elemento preso no DOM indefinidamente mesmo já invisível
       // (pointer-events-none evita bloquear clique, mas não é limpo).
       setTimeout(() => {
-        if (!cancelado) setRemovido(true);
+        if (!cancelado) {
+          setRemovido(true);
+          marcarSplashExibida();
+        }
       }, DURACAO_FADE_MS);
     });
 
     return () => {
       cancelado = true;
     };
-  }, []);
+  }, [removido]);
 
   if (removido) return null;
 

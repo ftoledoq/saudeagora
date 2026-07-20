@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LoginForm } from "./login-form";
 import { BrandMark } from "@/lib/brand-mark";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function LoginPage({
   searchParams,
@@ -9,6 +11,18 @@ export default async function LoginPage({
 }) {
   const { next } = await searchParams;
   const nextParam = next ?? "/";
+
+  // Rede de segurança: nunca mostrar o formulário de login pra quem já tem
+  // sessão ativa. Cobre o caso de alguém cair aqui indevidamente (ex: um
+  // link/redirect com destino errado calculado antes da sessão resolver em
+  // outro lugar do app) — sem isso, a pessoa vê a tela de login do nada
+  // mesmo estando autenticada, o que é justamente o sintoma relatado numa
+  // apresentação real.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) redirect("/");
 
   return (
     <div className="mx-auto max-w-md px-4 py-16 sm:px-6">
