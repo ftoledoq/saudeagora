@@ -37,6 +37,9 @@ export async function registrarCliente(
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
     password,
+    // Mesma claim de papel gravada no cadastro de profissional — ver
+    // cadastro/actions.ts e src/lib/role.ts.
+    options: { data: { role: "cliente" } },
   });
   if (signUpError) {
     if (signUpError.message.toLowerCase().includes("already registered")) {

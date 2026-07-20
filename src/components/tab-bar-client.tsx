@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import type { Papel } from "@/lib/role";
 
 type TabItem = {
-  href: string | null;
+  href: string;
   label: string;
   icon: "buscar" | "agenda" | "perfil";
 };
@@ -34,69 +33,24 @@ const ICONS: Record<TabItem["icon"], React.ReactNode> = {
   ),
 };
 
-// Resolve o papel (cliente/profissional) inteiramente no navegador, depois
-// de montar — de propósito, NÃO como Server Component lendo cookies() no
-// layout raiz. Uma tab bar persistente que depende de recálculo dinâmico
-// do servidor a cada navegação é recriada/reconciliada a cada troca de
-// rota; isso é a causa mais provável do bug original de "precisa tocar 2
-// vezes" (o nó DOM pode ser substituído no meio de um toque). Como
-// componente 100% cliente, a tab bar monta uma única vez e nunca mais é
-// recriada pelo roteamento.
-//
-// Agenda/Perfil começam com href null (não um destino padrão como
-// "/login?next=/agenda") — enquanto o papel não resolve, o item renderiza
-// desabilitado (ver abaixo), nunca navegável. Um href padrão apontando pra
-// login era uma corrida real: quem já tem sessão ativa e toca o item antes
-// da resolução terminar caía no formulário de login, parecendo "deslogado
-// do nada" — exatamente o sintoma relatado numa apresentação real.
-export function TabBarClient() {
+// `papel` chega pronto via prop, resolvido no servidor pelo layout raiz
+// (src/app/layout.tsx, via src/lib/role.ts) antes de qualquer HTML sair —
+// não existe mais nenhuma consulta assíncrona a professionals/clients
+// aqui, nem estado de "ainda resolvendo". Servidor e cliente sempre
+// renderizam o mesmo href na primeira vez, então não há mais janela onde
+// um usuário já autenticado toca um item e cai em /login por engano —
+// causa raiz do bug de redirecionamento indevido relatado numa
+// apresentação real.
+export function TabBarClient({ papel }: { papel: Papel }) {
   const pathname = usePathname();
-  const [agendaHref, setAgendaHref] = useState<string | null>(null);
-  const [perfilHref, setPerfilHref] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelado = false;
-    const supabase = createClient();
-
-    async function resolverPapel() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (cancelado) return;
-
-      if (!user) {
-        setPerfilHref("/login?next=/perfil");
-        setAgendaHref("/login?next=/agenda");
-        return;
-      }
-
-      setPerfilHref("/perfil");
-
-      const { data: professional } = await supabase
-        .from("professionals")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (cancelado) return;
-
-      if (professional) {
-        setAgendaHref("/agenda");
-        return;
-      }
-
-      const { data: client } = await supabase
-        .from("clients")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (!cancelado) setAgendaHref(client ? "/minhas-reservas" : "/login?next=/minhas-reservas");
-    }
-
-    resolverPapel();
-    return () => {
-      cancelado = true;
-    };
-  }, []);
+  const agendaHref =
+    papel === "profissional"
+      ? "/agenda"
+      : papel === "cliente"
+        ? "/minhas-reservas"
+        : "/login?next=/agenda";
+  const perfilHref = papel ? "/perfil" : "/login?next=/perfil";
 
   const items: TabItem[] = [
     { href: "/buscar", label: "Buscar", icon: "buscar" },
@@ -108,21 +62,6 @@ export function TabBarClient() {
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex max-w-md items-stretch justify-around">
         {items.map((item) => {
-          if (item.href === null) {
-            // Ainda resolvendo: mesmo layout do item real, mas sem link e
-            // sem ação — nunca leva a lugar nenhum enquanto isso.
-            return (
-              <span
-                key={item.icon}
-                aria-hidden="true"
-                className="flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium text-foreground/25"
-              >
-                {ICONS[item.icon]}
-                {item.label}
-              </span>
-            );
-          }
-
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link

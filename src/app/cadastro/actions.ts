@@ -79,6 +79,10 @@ export async function cadastrarProfissional(
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
     password,
+    // Grava o papel como claim de user_metadata no momento da criação —
+    // qualquer página/componente lê isso direto de getUser(), sem precisar
+    // consultar professionals/clients pra saber quem é quem depois.
+    options: { data: { role: "profissional" } },
   });
   if (signUpError) {
     if (signUpError.message.toLowerCase().includes("already registered")) {

@@ -4,6 +4,8 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TabBarClient } from "@/components/tab-bar-client";
 import { SplashScreen } from "@/components/splash-screen";
+import { createClient } from "@/lib/supabase/server";
+import { resolverPapel } from "@/lib/role";
 import "./globals.css";
 
 const sora = Sora({
@@ -32,11 +34,24 @@ export const viewport: Viewport = {
   themeColor: "#0f6e5c",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolvido uma única vez aqui, no servidor, antes de qualquer HTML sair
+  // — a tab bar recebe o papel já pronto via prop, nunca precisa descobrir
+  // nada depois de montada no navegador. Isso torna o layout raiz dinâmico
+  // (opta fora da otimização estática em toda página, inclusive as
+  // públicas) — troca deliberada: corrige a classe inteira de bug de
+  // corrida/redirecionamento indevido pra login, num app beta de baixo
+  // tráfego onde isso pesa mais que a otimização perdida.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const papel = await resolverPapel(supabase, user);
+
   return (
     <html
       lang="pt-BR"
@@ -47,7 +62,7 @@ export default function RootLayout({
         <SiteHeader />
         <main className="flex-1 pb-16">{children}</main>
         <SiteFooter />
-        <TabBarClient />
+        <TabBarClient papel={papel} />
       </body>
     </html>
   );
