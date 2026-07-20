@@ -1,0 +1,43 @@
+name: Smoke test pós-deploy
+
+# Dispara em deployment_status — evento que o app do Vercel no GitHub emite
+# quando um deploy muda de estado. Roda só quando o deploy termina com
+# sucesso (state == success), contra a URL real desse deploy
+# (target_url) — nunca contra localhost, nunca contra "produção" genérica,
+# sempre o deploy que acabou de sair.
+on:
+  deployment_status:
+
+jobs:
+  smoke:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Rodar smoke test contra o deploy
+        env:
+          SMOKE_BASE_URL: ${{ github.event.deployment_status.target_url }}
+          SMOKE_CLIENTE_EMAIL: ${{ secrets.SMOKE_CLIENTE_EMAIL }}
+          SMOKE_CLIENTE_SENHA: ${{ secrets.SMOKE_CLIENTE_SENHA }}
+          SMOKE_PROFISSIONAL_EMAIL: ${{ secrets.SMOKE_PROFISSIONAL_EMAIL }}
+          SMOKE_PROFISSIONAL_SENHA: ${{ secrets.SMOKE_PROFISSIONAL_SENHA }}
+        run: npm run test:smoke
+
+      - name: Guardar relatório em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
