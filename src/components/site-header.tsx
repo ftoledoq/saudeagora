@@ -6,7 +6,11 @@ import { BrandMark } from "@/lib/brand-mark";
 // CTA de captação de profissional, que não tem lugar na tab bar.
 export function SiteHeader() {
   return (
-    <header className="border-b border-border bg-background/95 backdrop-blur sticky top-0 z-40">
+    // Fundo sólido, não translúcido+blur — mesmo raciocínio da tab bar
+    // (src/components/tab-bar-client.tsx): backdrop-filter em elemento
+    // sticky/fixed é caro em mobile e pode renderizar com atraso durante o
+    // scroll.
+    <header className="border-b border-border bg-background sticky top-0 z-40">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         <Link href="/" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">

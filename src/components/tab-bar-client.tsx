@@ -59,7 +59,12 @@ export function TabBarClient({ papel }: { papel: Papel }) {
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur">
+    // Fundo sólido opaco, não translúcido+blur: backdrop-filter em elemento
+    // fixed é caro de renderizar em mobile (Safari especialmente) e pode
+    // causar atraso visual perceptível durante o scroll, dando a impressão
+    // de que a barra "acompanha" a rolagem em vez de ficar fixa — relatado
+    // como comportamento de app amador. Sólido é imediato, sem essa dúvida.
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background">
       <div className="mx-auto flex max-w-md items-stretch justify-around">
         {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
