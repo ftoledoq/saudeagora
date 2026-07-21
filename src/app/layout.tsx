@@ -46,11 +46,23 @@ export default async function RootLayout({
   // públicas) — troca deliberada: corrige a classe inteira de bug de
   // corrida/redirecionamento indevido pra login, num app beta de baixo
   // tráfego onde isso pesa mais que a otimização perdida.
+  //
+  // getSession() aqui, NÃO getUser(): getUser() sempre faz um round-trip de
+  // rede pro servidor de auth do Supabase pra revalidar o token — correto
+  // pra decisão de segurança, mas o layout raiz roda em TODA navegação
+  // client-side (não só uma vez no login), então isso estava somando um
+  // round-trip de rede extra a cada toque na tab bar (medido: 700ms–1.9s a
+  // mais por navegação, causa real do "parece que não respondeu, toco de
+  // novo" mesmo depois da correção da corrida original). getSession() lê o
+  // token do cookie localmente, sem round-trip — suficiente aqui porque a
+  // tab bar só decide qual link mostrar, não é fronteira de segurança; cada
+  // página protegida continua fazendo sua própria checagem autoritativa
+  // com getUser() antes de liberar qualquer ação real, isso não muda.
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const papel = await resolverPapel(supabase, user);
+    data: { session },
+  } = await supabase.auth.getSession();
+  const papel = await resolverPapel(supabase, session?.user ?? null);
 
   return (
     <html
