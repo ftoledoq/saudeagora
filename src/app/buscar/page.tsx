@@ -1,7 +1,19 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SearchMap, type MapPin } from "@/components/map/search-map-loader";
+import { UsarLocalizacaoButton } from "@/components/usar-localizacao-button";
 import type { Bairro } from "@/types/database";
+
+// Distância vem de centro de bairro, não endereço exato — mostrar
+// "3.2 km" finge uma precisão que não temos. Faixas honestas em vez de
+// número com casa decimal.
+function faixaDistancia(km: number): string {
+  if (km < 1) return "menos de 1 km";
+  if (km < 3) return "1–3 km";
+  if (km < 5) return "3–5 km";
+  if (km < 10) return "5–10 km";
+  return "mais de 10 km";
+}
 
 const SERVICE_LABEL: Record<string, string> = {
   personal_trainer: "Personal Trainer",
@@ -65,6 +77,7 @@ export default async function BuscarPage({
     tipo?: string;
     preco_max?: string;
     ordenar?: string;
+    raio_km?: string;
   }>;
 }) {
   const {
@@ -73,7 +86,9 @@ export default async function BuscarPage({
     tipo,
     preco_max: precoMaxParam,
     ordenar,
+    raio_km: raioKmParam,
   } = await searchParams;
+  const raioKm = raioKmParam ? Number(raioKmParam) : null;
   const supabase = await createClient();
 
   const [{ data: bairros }, { data: profissionais }, { data: services }] = await Promise.all([
@@ -117,6 +132,17 @@ export default async function BuscarPage({
       latitude: p.bairro_latitude,
       longitude: p.bairro_longitude,
     };
+    const distanciaKm = bairroSelecionado
+      ? haversineKm(
+          bairroSelecionado.latitude,
+          bairroSelecionado.longitude,
+          bairroProf.latitude,
+          bairroProf.longitude
+        )
+      : null;
+    // Raio só filtra quando dá pra calcular distância (bairro selecionado)
+    // — sem bairro de referência, "raio" não tem centro pra medir a partir.
+    if (raioKm && distanciaKm != null && distanciaKm > raioKm) continue;
     for (const s of servicosPorProfissional.get(p.id) ?? []) {
       if (tipo && s.tipo !== tipo) continue;
       if (precoMax && s.preco > precoMax) continue;
@@ -126,17 +152,17 @@ export default async function BuscarPage({
         nome: p.nome,
         bairro: bairroProf,
         servico: s,
-        distanciaKm: bairroSelecionado
-          ? haversineKm(
-              bairroSelecionado.latitude,
-              bairroSelecionado.longitude,
-              bairroProf.latitude,
-              bairroProf.longitude
-            )
-          : null,
+        distanciaKm,
       });
     }
   }
+
+  // "Perto de você": só faz sentido com um bairro de referência (senão não
+  // há distância pra ordenar) — os mais próximos, separados da lista
+  // completa, item de descoberta rápida.
+  const pertoDeVoce = bairroSelecionado
+    ? [...cards].sort((a, b) => (a.distanciaKm ?? Infinity) - (b.distanciaKm ?? Infinity)).slice(0, 8)
+    : [];
 
   cards.sort((a, b) => {
     if (ordenar === "preco") return a.servico.preco - b.servico.preco;
@@ -162,13 +188,20 @@ export default async function BuscarPage({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <h1 className="font-display text-3xl font-bold tracking-tight">
-        Buscar profissionais
-      </h1>
-      <p className="mt-2 text-foreground/70">
-        {cards.length} resultado(s) em {cidadeSelecionada}
-        {bairroSelecionado && ` — perto de ${bairroSelecionado.nome}`}
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl font-bold tracking-tight">
+            Buscar profissionais
+          </h1>
+          <p className="mt-2 text-foreground/70">
+            {cards.length} resultado(s) em {cidadeSelecionada}
+            {bairroSelecionado && ` — perto de ${bairroSelecionado.nome}`}
+          </p>
+        </div>
+        <UsarLocalizacaoButton
+          bairros={todosBairros.map((b) => ({ id: b.id, nome: b.nome, cidade: b.cidade }))}
+        />
+      </div>
 
       <form
         method="get"
@@ -231,6 +264,26 @@ export default async function BuscarPage({
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <label htmlFor="raio_km" className="text-sm font-medium text-foreground/80">
+            Raio de busca
+          </label>
+          <select
+            id="raio_km"
+            name="raio_km"
+            defaultValue={raioKmParam ?? ""}
+            disabled={!bairroSelecionado}
+            title={!bairroSelecionado ? "Selecione um bairro pra usar raio de busca" : undefined}
+            className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-50"
+          >
+            <option value="">Qualquer distância</option>
+            <option value="2">Até 2 km</option>
+            <option value="5">Até 5 km</option>
+            <option value="10">Até 10 km</option>
+            <option value="20">Até 20 km</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="preco_max" className="text-sm font-medium text-foreground/80">
             Preço até (R$)
           </label>
@@ -268,6 +321,32 @@ export default async function BuscarPage({
         </button>
       </form>
 
+      {pertoDeVoce.length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-display text-lg font-semibold">
+            Perto de {bairroSelecionado?.nome}
+          </h2>
+          <div className="mt-3 -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+            {pertoDeVoce.map((c) => (
+              <Link
+                key={c.key}
+                href={`/profissionais/${c.professionalId}`}
+                className="flex w-48 shrink-0 flex-col rounded-2xl border border-border bg-white p-4 transition-colors hover:border-primary"
+              >
+                <span className="rounded-full self-start bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary">
+                  {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
+                </span>
+                <h3 className="mt-2 font-display text-sm font-semibold">{c.nome}</h3>
+                {c.distanciaKm != null && (
+                  <p className="mt-1 text-xs text-foreground/60">{faixaDistancia(c.distanciaKm)}</p>
+                )}
+                <p className="mt-1 text-sm font-semibold text-primary">R$ {c.servico.preco}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <div className="flex flex-col gap-4">
           {cards.length === 0 && (
@@ -286,7 +365,7 @@ export default async function BuscarPage({
                   <h2 className="font-display text-base font-semibold">{c.nome}</h2>
                   <p className="text-sm text-foreground/60">
                     {c.bairro.nome} — {c.bairro.cidade}/{c.bairro.estado}
-                    {c.distanciaKm != null && ` · ${c.distanciaKm.toFixed(1)} km`}
+                    {c.distanciaKm != null && ` · ${faixaDistancia(c.distanciaKm)}`}
                   </p>
                 </div>
                 <span className="rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary">

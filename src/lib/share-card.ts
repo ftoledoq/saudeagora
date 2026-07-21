@@ -3,6 +3,10 @@
 // mesmo path SVG do BrandMark (src/lib/brand-mark.tsx) via Path2D, que
 // entende sintaxe de path SVG nativamente — mesma geometria, sem duplicar
 // desenho à mão.
+//
+// A folha de compartilhamento continua sendo a nativa do sistema
+// (src/components/share-card-button.tsx, Web Share API) — este arquivo só
+// gera a imagem, nunca constrói UI de compartilhamento própria.
 
 const BRAND_MARK_PATH = "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z";
 const PULSE_POINTS: [number, number][] = [
@@ -59,50 +63,94 @@ export async function gerarImagemCardAtendimento(params: {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas não suportado neste navegador.");
 
-  // Fundo sólido na cor da marca — sem gradiente decorativo, consistente
-  // com o resto da identidade visual do app.
-  ctx.fillStyle = "#0f6e5c";
+  // Gradiente diagonal na própria paleta (teal → teal mais escuro), não um
+  // gradiente decorativo genérico — profundidade sem sair da identidade.
+  const fundo = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
+  fundo.addColorStop(0, "#12836d");
+  fundo.addColorStop(1, "#0a4f42");
+  ctx.fillStyle = fundo;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  // Selo de logo no topo
-  const badgeSize = 96;
+  // Brilho radial suave em coral (accent) atrás do selo — único uso de
+  // accent aqui, dá destaque ao ícone sem virar um card garrido.
+  const glow = ctx.createRadialGradient(WIDTH / 2, 300, 20, WIDTH / 2, 300, 260);
+  glow.addColorStop(0, "rgba(255,107,74,0.35)");
+  glow.addColorStop(1, "rgba(255,107,74,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Selo de logo no topo — maior e com anel sutil, mais destaque que a
+  // versão anterior (badge translúcido simples).
+  const badgeSize = 128;
   const badgeX = WIDTH / 2 - badgeSize / 2;
-  const badgeY = 120;
-  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  const badgeY = 140;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.25)";
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
   ctx.beginPath();
-  ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 22);
+  ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 30);
   ctx.fill();
-  desenharLogo(ctx, badgeX + badgeSize / 2 - 22, badgeY + badgeSize / 2 - 22, 44);
+  ctx.restore();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.beginPath();
+  ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 30);
+  ctx.stroke();
+  desenharLogo(ctx, badgeX + badgeSize / 2 - 28, badgeY + badgeSize / 2 - 28, 56);
 
   // Wordmark
   ctx.textAlign = "center";
   ctx.fillStyle = "#faf7f2";
-  ctx.font = "600 40px Sora, sans-serif";
-  ctx.fillText("SaúdeAgora", WIDTH / 2, badgeY + badgeSize + 70);
+  ctx.font = "600 42px Sora, sans-serif";
+  ctx.fillText("SaúdeAgora", WIDTH / 2, badgeY + badgeSize + 76);
 
   // Mensagem de destaque
-  ctx.font = "700 56px Sora, sans-serif";
+  ctx.font = "800 62px Sora, sans-serif";
   ctx.fillStyle = "#ffffff";
   const linhas = ["Sessão concluída", "com sucesso! 💪"];
-  let y = HEIGHT / 2 - 40;
+  let y = HEIGHT / 2 - 30;
   for (const linha of linhas) {
     ctx.fillText(linha, WIDTH / 2, y);
-    y += 68;
+    y += 74;
   }
 
-  // Nome do profissional + serviço
-  ctx.font = "600 44px Sora, sans-serif";
-  ctx.fillStyle = "rgba(255,255,255,0.95)";
-  ctx.fillText(params.profissionalNome, WIDTH / 2, y + 60);
+  // Divisor decorativo — três pontos, reforça o "respiro" entre a
+  // mensagem e os detalhes do atendimento sem precisar de mais texto.
+  y += 30;
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.arc(WIDTH / 2 + i * 22, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  y += 60;
 
-  ctx.font = "400 32px Inter, sans-serif";
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  // Nome do profissional
+  ctx.font = "700 48px Sora, sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(params.profissionalNome, WIDTH / 2, y);
+
+  // Serviço como pill em coral — mesmo peso visual que a tag de serviço
+  // usada no resto do app (bg-primary-light/accent), não texto solto.
+  y += 56;
   const servicoLabel = SERVICE_LABEL[params.servicoTipo] ?? params.servicoTipo;
-  ctx.fillText(servicoLabel, WIDTH / 2, y + 110);
+  ctx.font = "600 30px Inter, sans-serif";
+  const larguraTexto = ctx.measureText(servicoLabel).width;
+  const pillPaddingX = 32;
+  const pillWidth = larguraTexto + pillPaddingX * 2;
+  const pillHeight = 60;
+  ctx.fillStyle = "#ff6b4a";
+  ctx.beginPath();
+  ctx.roundRect(WIDTH / 2 - pillWidth / 2, y, pillWidth, pillHeight, pillHeight / 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(servicoLabel, WIDTH / 2, y + pillHeight / 2 + 10);
 
   // Rodapé
   ctx.font = "400 28px Inter, sans-serif";
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
   ctx.fillText("Personal trainer, massagem e pilates perto de você", WIDTH / 2, HEIGHT - 90);
 
   return new Promise((resolve, reject) => {

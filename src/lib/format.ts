@@ -22,3 +22,21 @@ export function formatData(dataIso: string): string {
   const [ano, mes, dia] = dataIso.split("-");
   return `${dia}/${mes}/${ano}`;
 }
+
+const DIAS_SEMANA_ABREV = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
+
+// Dia da semana a partir de uma data PURA — mesmo cuidado de formatData:
+// Date.UTC(...) com os componentes já extraídos da string, nunca
+// `new Date(dataIso)` direto (que interpretaria a string como ISO e traria
+// o mesmo risco de fuso). getUTCDay() (não getDay()) porque construímos em
+// UTC de propósito — sem isso o ambiente local do navegador/servidor
+// poderia rolar o dia da semana também.
+export function diaSemanaAbrev(dataIso: string): string {
+  const [ano, mes, dia] = dataIso.split("-").map(Number);
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+  return DIAS_SEMANA_ABREV[data.getUTCDay()];
+}
+
+export function diaDoMes(dataIso: string): string {
+  return dataIso.split("-")[2];
+}
