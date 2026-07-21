@@ -10,7 +10,7 @@ import {
   responderAvaliacao,
 } from "./actions";
 import type { Availability } from "@/types/database";
-import { formatDataHora } from "@/lib/format";
+import { formatDataHora, formatData } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
 
 const JANELA_NO_SHOW_MIN = 30;
@@ -344,7 +344,7 @@ export default async function AgendaPage() {
               className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3"
             >
               <span className="text-sm">
-                {s.data} · {s.hora_inicio.slice(0, 5)}–{s.hora_fim.slice(0, 5)}
+                {formatData(s.data)} · {s.hora_inicio.slice(0, 5)}–{s.hora_fim.slice(0, 5)}
               </span>
               <div className="flex items-center gap-3">
                 <span

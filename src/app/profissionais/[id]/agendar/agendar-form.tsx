@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { criarAgendamento, type AgendarFormState } from "./actions";
+import { formatData } from "@/lib/format";
 import type { Availability, Bairro } from "@/types/database";
 
 const SERVICE_LABEL: Record<string, string> = {
@@ -75,7 +76,7 @@ export function AgendarForm({
                   onChange={() => setSlotId(s.id)}
                   className="accent-primary"
                 />
-                {s.data} · {s.hora_inicio.slice(0, 5)}
+                {formatData(s.data)} · {s.hora_inicio.slice(0, 5)}
               </label>
             ))}
           </div>
@@ -130,7 +131,7 @@ export function AgendarForm({
             <dt className="text-foreground/70">Data/hora</dt>
             <dd className="font-medium">
               {slotEscolhido
-                ? `${slotEscolhido.data} às ${slotEscolhido.hora_inicio.slice(0, 5)}`
+                ? `${formatData(slotEscolhido.data)} às ${slotEscolhido.hora_inicio.slice(0, 5)}`
                 : "Escolha um horário acima"}
             </dd>
           </div>
