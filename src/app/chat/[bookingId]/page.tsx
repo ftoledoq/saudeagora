@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar } from "@/components/avatar";
+import { BotaoVoltar } from "@/components/botao-voltar";
 import { formatDataHora } from "@/lib/format";
 import { ChatThread } from "./chat-thread";
 
@@ -102,9 +102,7 @@ export default async function ChatPage({
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] max-w-2xl flex-col">
       <div className="flex items-center gap-3 border-b border-border bg-white px-4 py-3">
-        <Link href="/" className="text-sm text-foreground/50">
-          ←
-        </Link>
+        <BotaoVoltar fallbackHref={viewerTipo === "cliente" ? "/minhas-reservas" : "/agenda"} />
         <Avatar nome={outraParteNome} photoUrl={outraParteFotoUrl} size={40} />
         <div>
           <p className="font-display font-semibold">{outraParteNome}</p>

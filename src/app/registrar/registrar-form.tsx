@@ -8,12 +8,13 @@ const inputClass =
   "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary";
 const labelClass = "text-sm font-medium text-foreground/80";
 
-export function RegistrarForm({ next }: { next: string }) {
+export function RegistrarForm({ next, ref }: { next: string; ref: string | null }) {
   const [state, formAction, pending] = useActionState(registrarCliente, initialState);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="next" value={next} />
+      {ref && <input type="hidden" name="indicado_por" value={ref} />}
 
       {state.error && (
         <div className="rounded-lg border border-error bg-error-light px-4 py-3 text-sm text-error">
@@ -74,7 +75,7 @@ export function RegistrarForm({ next }: { next: string }) {
         <span>
           Li e aceito os{" "}
           <a
-            href="/termos"
+            href="/termos/uso"
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-primary hover:underline"

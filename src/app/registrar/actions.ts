@@ -21,6 +21,11 @@ export async function registrarCliente(
   const bio = String(formData.get("bio") ?? "").trim() || null;
   const fotoFile = formData.get("foto") as File | null;
   const temFoto = !!fotoFile && fotoFile.size > 0;
+  // Indique amigos: só rastreamento por enquanto, sem recompensa — o valor
+  // é o próprio user_id de quem indicou, vindo de ?ref= no link
+  // compartilhado (ver /perfil/indicar). Não valida se o id existe de
+  // verdade — é só um dado analítico, não uma referência com FK.
+  const indicadoPor = String(formData.get("indicado_por") ?? "").trim() || null;
 
   if (!aceiteTermos) return { error: "É preciso aceitar os Termos e Políticas para criar conta." };
   if (!nome) return { error: "Nome é obrigatório." };
@@ -54,7 +59,15 @@ export async function registrarCliente(
 
   const { data: client, error: clientError } = await supabase
     .from("clients")
-    .insert({ user_id: user.id, nome, telefone, email, bio, termos_aceitos_em: new Date().toISOString() })
+    .insert({
+      user_id: user.id,
+      nome,
+      telefone,
+      email,
+      bio,
+      indicado_por: indicadoPor,
+      termos_aceitos_em: new Date().toISOString(),
+    })
     .select("id")
     .single();
   if (clientError) return { error: `Não foi possível salvar seu cadastro: ${clientError.message}` };

@@ -139,7 +139,10 @@ export function ChatThread({
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           placeholder="Escreva uma mensagem..."
-          className="flex-1 rounded-full border border-border bg-white px-4 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          // text-base (16px), não text-sm (14px): Safari/iOS dá zoom
+          // automático ao focar em qualquer campo com font-size abaixo de
+          // 16px — causa real do zoom relatado ao abrir o teclado no chat.
+          className="flex-1 rounded-full border border-border bg-white px-4 py-2 text-base outline-none focus:border-primary focus:ring-1 focus:ring-primary"
         />
         <button
           type="submit"

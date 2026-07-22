@@ -226,7 +226,7 @@ export function CadastroForm({ bairros }: { bairros: Bairro[] }) {
         <span>
           Li e aceito os{" "}
           <a
-            href="/termos"
+            href="/termos/uso"
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-primary hover:underline"

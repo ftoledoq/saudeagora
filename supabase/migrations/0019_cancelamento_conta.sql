@@ -1,0 +1,17 @@
+-- SaúdeAgora — beta enxuto
+-- US-14 (cancelamento de conta pelo próprio usuário). Decisão de retenção
+-- confirmada explicitamente com o founder antes de implementar: bookings/
+-- addresses NUNCA são apagados, mantidos indefinidamente até o RIPD
+-- fechar um prazo formal de retenção (ainda em aberto). Só os dados
+-- diretamente identificáveis (nome, cpf, telefone, email, foto) são
+-- anonimizados — o vínculo com os bookings permanece intacto pra
+-- auditoria, só sem apontar mais pra uma pessoa identificável.
+--
+-- 'excluido' é um status distinto de 'bloqueado'/'suspenso' (ações do
+-- admin por violação de regra) — autoexclusão voluntária é outra coisa,
+-- importa manter distinto pra auditoria (quem tomou a ação).
+--
+-- Precisa ser uma migration separada da 0020 (que já USA esse valor):
+-- Postgres não permite usar um valor de enum recém-criado na mesma
+-- transação em que ele foi adicionado.
+alter type professional_status add value if not exists 'excluido';

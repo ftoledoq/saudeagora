@@ -3,9 +3,9 @@ import { RegistrarForm } from "./registrar-form";
 export default async function RegistrarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; ref?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, ref } = await searchParams;
 
   return (
     <div className="mx-auto max-w-md px-4 py-16 sm:px-6">
@@ -15,7 +15,7 @@ export default async function RegistrarPage({
       </p>
 
       <div className="mt-8 rounded-2xl border border-border bg-white p-6">
-        <RegistrarForm next={next ?? "/"} />
+        <RegistrarForm next={next ?? "/"} ref={ref ?? null} />
       </div>
     </div>
   );

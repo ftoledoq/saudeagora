@@ -76,11 +76,11 @@ export async function confirmarAgendamento(formData: FormData) {
     .update({ status: "confirmado" })
     .eq("id", id)
     .eq("professional_id", professional.id)
-    .select("cliente:clients(email)")
-    .single<{ cliente: { email: string } | null }>();
+    .select("cliente:clients(email, notificacoes_email)")
+    .single<{ cliente: { email: string; notificacoes_email: boolean } | null }>();
   if (error) throw new Error(error.message);
 
-  if (booking.cliente) {
+  if (booking.cliente?.notificacoes_email) {
     await avisarPedidoConfirmado({
       clienteEmail: booking.cliente.email,
       professionalNome: professional.nome,
@@ -100,11 +100,11 @@ export async function recusarAgendamento(formData: FormData) {
     .update({ status: "recusado" })
     .eq("id", id)
     .eq("professional_id", professional.id)
-    .select("cliente:clients(email)")
-    .single<{ cliente: { email: string } | null }>();
+    .select("cliente:clients(email, notificacoes_email)")
+    .single<{ cliente: { email: string; notificacoes_email: boolean } | null }>();
   if (error) throw new Error(error.message);
 
-  if (booking.cliente) {
+  if (booking.cliente?.notificacoes_email) {
     await avisarPedidoRecusado({
       clienteEmail: booking.cliente.email,
       professionalNome: professional.nome,
