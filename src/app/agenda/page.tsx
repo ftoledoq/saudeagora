@@ -12,34 +12,8 @@ import {
 import type { Availability } from "@/types/database";
 import { formatDataHora, formatData } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
-
-const JANELA_NO_SHOW_MIN = 30;
-
-// Mesmo conjunto de status que libera o chat na RLS (booking_chat_liberado,
-// migration 0017).
-const STATUS_LIBERA_CHAT = ["confirmado", "concluido", "no_show_cliente", "no_show_profissional"];
-
-function dentroDaJanelaNoShow(dataHoraIso: string): boolean {
-  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
-  return minutosDesde >= 0 && minutosDesde <= JANELA_NO_SHOW_MIN;
-}
-
-const SERVICE_LABEL: Record<string, string> = {
-  personal_trainer: "Personal Trainer",
-  massagem: "Massagem",
-  pilates: "Pilates",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  solicitado: "Solicitado",
-  confirmado: "Confirmado",
-  recusado: "Recusado",
-  concluido: "Concluído",
-  cancelado_cliente: "Cancelado (cliente)",
-  cancelado_profissional: "Cancelado (você)",
-  no_show_cliente: "Cliente não compareceu",
-  no_show_profissional: "Você não compareceu",
-};
+import { TappableCard } from "@/components/tappable-card";
+import { SERVICE_LABEL, STATUS_LABEL, STATUS_LIBERA_CHAT, podeReportarNoShow } from "./shared";
 
 type ReviewRow = {
   id: string;
@@ -87,7 +61,7 @@ export default async function AgendaPage() {
     );
   }
 
-  const [{ data: slots }, { data: bookings }] = await Promise.all([
+  const [{ data: slots }, { data: bookings }, { data: service }] = await Promise.all([
     supabase
       .from("availability")
       .select("*")
@@ -104,7 +78,9 @@ export default async function AgendaPage() {
       .eq("professional_id", professional.id)
       .order("data_hora", { ascending: true })
       .returns<BookingRow[]>(),
+    supabase.from("services").select("duracao_min").eq("professional_id", professional.id).maybeSingle(),
   ]);
+  const duracaoServicoMin = service?.duracao_min ?? 60;
 
   const pendentes = (bookings ?? []).filter((b) => b.status === "solicitado");
   const outros = (bookings ?? []).filter((b) => b.status !== "solicitado");
@@ -197,13 +173,13 @@ export default async function AgendaPage() {
           <h2 className="font-display text-lg font-semibold">Histórico</h2>
           <div className="mt-3 flex flex-col gap-3">
             {outros.map((b) => {
-              const podeReportarNoShow =
-                b.status === "confirmado" && dentroDaJanelaNoShow(b.data_hora);
+              const reportavel = podeReportarNoShow(b.data_hora, b.status);
 
               return (
-                <div
+                <TappableCard
                   key={b.id}
-                  className="rounded-xl border border-border bg-white px-4 py-3 text-sm"
+                  href={`/agenda/${b.id}`}
+                  className="cursor-pointer rounded-xl border border-border bg-white px-4 py-3 text-sm transition-colors hover:border-primary"
                 >
                   <div className="flex items-center justify-between">
                     <span>
@@ -223,7 +199,7 @@ export default async function AgendaPage() {
                     </Link>
                   )}
 
-                  {podeReportarNoShow && (
+                  {reportavel && (
                     <form action={reportarClienteNaoCompareceu} className="mt-2">
                       <input type="hidden" name="id" value={b.id} />
                       <button
@@ -269,7 +245,7 @@ export default async function AgendaPage() {
                       )}
                     </div>
                   )}
-                </div>
+                </TappableCard>
               );
             })}
           </div>
@@ -312,18 +288,14 @@ export default async function AgendaPage() {
               className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="hora_fim" className="text-sm font-medium text-foreground/80">
-              Fim
-            </label>
-            <input
-              id="hora_fim"
-              name="hora_fim"
-              type="time"
-              required
-              className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-            />
-          </div>
+          {/* "Fim" não é mais digitado — calculado no servidor a partir da
+              duração do serviço (evita o bug de início/fim caindo no mesmo
+              valor padrão do seletor nativo e gerando horário de duração
+              zero). Só mostra pra que o profissional saiba o que está
+              reservando. */}
+          <p className="pb-2.5 text-sm text-foreground/60">
+            Duração: {duracaoServicoMin} min (definida no seu cadastro)
+          </p>
           <button
             type="submit"
             className="rounded-full bg-accent px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"

@@ -23,16 +23,37 @@ async function getOwnProfessional(
   return professional;
 }
 
+// Soma minutos a "HH:MM", sem depender de Date (evitaria o mesmo risco de
+// fuso já documentado em src/lib/format.ts) — só aritmética de string.
+function somarMinutos(horaInicio: string, minutos: number): string {
+  const [h, m] = horaInicio.split(":").map(Number);
+  const totalMin = h * 60 + m + minutos;
+  const hFim = Math.floor(totalMin / 60) % 24;
+  const mFim = totalMin % 60;
+  return `${String(hFim).padStart(2, "0")}:${String(mFim).padStart(2, "0")}`;
+}
+
 export async function adicionarDisponibilidade(formData: FormData) {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
 
   const data = String(formData.get("data") ?? "");
   const horaInicio = String(formData.get("hora_inicio") ?? "");
-  const horaFim = String(formData.get("hora_fim") ?? "");
 
-  if (!data || !horaInicio || !horaFim) throw new Error("Preencha data e horário.");
-  if (horaFim <= horaInicio) throw new Error("Horário de fim precisa ser depois do início.");
+  if (!data || !horaInicio) throw new Error("Preencha data e horário.");
+
+  // "Fim" nunca vem do formulário (era o bug: início e fim caindo no mesmo
+  // valor padrão do seletor de hora nativo, gerando horário de duração
+  // zero) — é sempre calculado a partir da duração do serviço já cadastrado,
+  // nunca digitado à mão.
+  const { data: service } = await supabase
+    .from("services")
+    .select("duracao_min")
+    .eq("professional_id", professionalId)
+    .maybeSingle();
+  if (!service) throw new Error("Cadastre seu serviço antes de adicionar disponibilidade.");
+
+  const horaFim = somarMinutos(horaInicio, service.duracao_min);
 
   const { error } = await supabase.from("availability").insert({
     professional_id: professionalId,
@@ -130,6 +151,7 @@ export async function reportarClienteNaoCompareceu(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/agenda");
+  revalidatePath(`/agenda/${id}`);
 }
 
 export async function responderAvaliacao(formData: FormData) {
