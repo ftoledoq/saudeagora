@@ -9,15 +9,50 @@ export async function sair() {
   redirect("/");
 }
 
-// Cancelamento de conta — decisão de retenção confirmada explicitamente
+// Pausa reversível (migration 0022) — some da busca (profissional), mas
+// login continua funcionando normalmente e nenhum dado é tocado. Um clique,
+// sem confirmação extra: não é destrutivo, não há motivo pra fricção.
+export async function desativarConta() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await Promise.all([
+    supabase.from("professionals").update({ ativo: false }).eq("user_id", user.id),
+    supabase.from("clients").update({ ativo: false }).eq("user_id", user.id),
+  ]);
+
+  redirect("/perfil");
+}
+
+export async function reativarConta() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await Promise.all([
+    supabase.from("professionals").update({ ativo: true }).eq("user_id", user.id),
+    supabase.from("clients").update({ ativo: true }).eq("user_id", user.id),
+  ]);
+
+  redirect("/perfil");
+}
+
+// Exclusão PERMANENTE — decisão de retenção confirmada explicitamente
 // antes de implementar (ver migration 0019): bookings/addresses NUNCA são
 // apagados ou desvinculados, só os dados diretamente identificáveis são
 // anonimizados. Sem chave service_role disponível neste ambiente pra
 // desativar login via API admin do Supabase — a alternativa que não
 // depende dela é embaralhar a própria senha (só a sessão atual, ainda
 // autenticada, consegue fazer isso) e encerrar a sessão em seguida: sem
-// saber a nova senha, a pessoa não consegue logar de novo.
-export async function cancelarConta() {
+// saber a nova senha, a pessoa não consegue logar de novo. Continua uma
+// única confirmação nativa (ConfirmarAcaoButton), sem passo extra — CDC
+// art. 72 pune quem dificulta exclusão de dado do consumidor.
+export async function excluirContaPermanentemente() {
   const supabase = await createClient();
   const {
     data: { user },

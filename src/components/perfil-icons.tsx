@@ -77,6 +77,17 @@ export const PerfilIcons = {
       <path d="M7 6l1 14h8l1-14" />
     </svg>
   ),
+  pausar: (
+    <svg {...props}>
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  ),
+  play: (
+    <svg {...props}>
+      <path d="M6 4l14 8-14 8V4z" />
+    </svg>
+  ),
   sair: (
     <svg {...props}>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
