@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { avisarPedidoConfirmado, avisarPedidoRecusado } from "@/lib/email";
+import { somarMinutos } from "./shared";
+import { renovarHorizonteDisponibilidade } from "./recurring";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 async function getOwnProfessional(
@@ -21,16 +23,6 @@ async function getOwnProfessional(
   if (!professional) throw new Error("Essa área é só para profissionais cadastrados.");
 
   return professional;
-}
-
-// Soma minutos a "HH:MM", sem depender de Date (evitaria o mesmo risco de
-// fuso já documentado em src/lib/format.ts) — só aritmética de string.
-function somarMinutos(horaInicio: string, minutos: number): string {
-  const [h, m] = horaInicio.split(":").map(Number);
-  const totalMin = h * 60 + m + minutos;
-  const hFim = Math.floor(totalMin / 60) % 24;
-  const mFim = totalMin % 60;
-  return `${String(hFim).padStart(2, "0")}:${String(mFim).padStart(2, "0")}`;
 }
 
 export async function adicionarDisponibilidade(formData: FormData) {
@@ -82,6 +74,115 @@ export async function removerDisponibilidade(formData: FormData) {
     .eq("id", id)
     .eq("professional_id", professionalId)
     .eq("status", "livre");
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/agenda");
+}
+
+// Salvar um padrão SEMPRE substitui o padrão inteiro anterior (apaga todas
+// as regras antigas do profissional e insere as novas) — não existe edição
+// por dia nesta fase. Simples de entender ("o que está salvo agora é a
+// verdade"), e evita a ambiguidade de "o que acontece com os horários já
+// gerados quando eu mudo o horário do padrão": a resposta é sempre "os já
+// gerados ficam como estão, só a geração futura muda" (ver
+// excluirPadraoRecorrente abaixo, mesmo raciocínio).
+export async function salvarPadraoRecorrente(formData: FormData) {
+  const supabase = await createClient();
+  const { id: professionalId } = await getOwnProfessional(supabase);
+
+  const dias = formData.getAll("dias").map(Number).filter((d) => d >= 0 && d <= 6);
+  const horaInicio = String(formData.get("hora_inicio") ?? "");
+
+  if (dias.length === 0) throw new Error("Selecione ao menos um dia da semana.");
+  if (!horaInicio) throw new Error("Preencha o horário de início.");
+
+  const { data: service } = await supabase
+    .from("services")
+    .select("duracao_min")
+    .eq("professional_id", professionalId)
+    .maybeSingle();
+  if (!service) throw new Error("Cadastre seu serviço antes de definir um padrão.");
+
+  const horaFim = somarMinutos(horaInicio, service.duracao_min);
+
+  await supabase.from("recurring_availability").delete().eq("professional_id", professionalId);
+
+  const { error } = await supabase.from("recurring_availability").insert(
+    dias.map((dia_semana) => ({
+      professional_id: professionalId,
+      dia_semana,
+      hora_inicio: horaInicio,
+      hora_fim: horaFim,
+    }))
+  );
+  if (error) throw new Error(error.message);
+
+  // Gera os horários avulsos das próximas semanas na hora — sem isso, o
+  // profissional salvaria o padrão e não veria nenhum horário novo até o
+  // próximo login.
+  await renovarHorizonteDisponibilidade(supabase, professionalId);
+
+  revalidatePath("/agenda");
+}
+
+// Só para de gerar horários novos — os que já foram gerados (inclusive os
+// das próximas semanas, se o horizonte já tinha sido renovado) continuam
+// existindo até serem removidos manualmente, um por um, igual qualquer
+// horário avulso. Decisão deliberada de não apagar em cascata: menos
+// surpresa (o profissional não perde horários que um cliente já pode ter
+// visto na busca sem aviso nenhum).
+export async function excluirPadraoRecorrente() {
+  const supabase = await createClient();
+  const { id: professionalId } = await getOwnProfessional(supabase);
+
+  const { error } = await supabase
+    .from("recurring_availability")
+    .delete()
+    .eq("professional_id", professionalId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/agenda");
+}
+
+// Bloqueia uma data específica mesmo dentro do padrão ("toda segunda,
+// exceto dia 28/07"). Apaga na hora qualquer horário 'livre' já gerado
+// pra essa data — nunca toca em 'bloqueado' (agendamento real já
+// confirmado nesse dia continua de pé, intacto; ver
+// bookings_block_availability na migration 0008). A exceção também
+// impede a geração automática de recriar horário nessa data no futuro
+// (ver recurring.ts).
+export async function adicionarExcecao(formData: FormData) {
+  const supabase = await createClient();
+  const { id: professionalId } = await getOwnProfessional(supabase);
+
+  const data = String(formData.get("data") ?? "");
+  if (!data) throw new Error("Escolha uma data.");
+
+  const { error } = await supabase
+    .from("availability_exceptions")
+    .upsert({ professional_id: professionalId, data }, { onConflict: "professional_id,data" });
+  if (error) throw new Error(error.message);
+
+  await supabase
+    .from("availability")
+    .delete()
+    .eq("professional_id", professionalId)
+    .eq("data", data)
+    .eq("status", "livre");
+
+  revalidatePath("/agenda");
+}
+
+export async function removerExcecao(formData: FormData) {
+  const supabase = await createClient();
+  const { id: professionalId } = await getOwnProfessional(supabase);
+
+  const id = String(formData.get("id") ?? "");
+  const { error } = await supabase
+    .from("availability_exceptions")
+    .delete()
+    .eq("id", id)
+    .eq("professional_id", professionalId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/agenda");

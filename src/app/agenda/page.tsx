@@ -4,16 +4,29 @@ import { createClient } from "@/lib/supabase/server";
 import {
   adicionarDisponibilidade,
   removerDisponibilidade,
+  salvarPadraoRecorrente,
+  excluirPadraoRecorrente,
+  adicionarExcecao,
+  removerExcecao,
   confirmarAgendamento,
   recusarAgendamento,
   reportarClienteNaoCompareceu,
   responderAvaliacao,
 } from "./actions";
+import { renovarHorizonteDisponibilidade } from "./recurring";
 import type { Availability } from "@/types/database";
 import { formatDataHora, formatData } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
 import { TappableCard } from "@/components/tappable-card";
-import { SERVICE_LABEL, STATUS_LABEL, STATUS_LIBERA_CHAT, podeReportarNoShow } from "./shared";
+import {
+  SERVICE_LABEL,
+  STATUS_LABEL,
+  STATUS_LIBERA_CHAT,
+  podeReportarNoShow,
+  DIA_SEMANA_ABREV,
+  ORDEM_EXIBICAO_DIAS,
+  textoPadraoRecorrente,
+} from "./shared";
 
 type ReviewRow = {
   id: string;
@@ -61,25 +74,43 @@ export default async function AgendaPage() {
     );
   }
 
-  const [{ data: slots }, { data: bookings }, { data: service }] = await Promise.all([
-    supabase
-      .from("availability")
-      .select("*")
-      .eq("professional_id", professional.id)
-      .gte("data", new Date().toISOString().slice(0, 10))
-      .order("data")
-      .order("hora_inicio")
-      .returns<Availability[]>(),
-    supabase
-      .from("bookings")
-      .select(
-        "id, data_hora, status, valor, cliente:clients(nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
-      )
-      .eq("professional_id", professional.id)
-      .order("data_hora", { ascending: true })
-      .returns<BookingRow[]>(),
-    supabase.from("services").select("duracao_min").eq("professional_id", professional.id).maybeSingle(),
-  ]);
+  // Renova o horizonte ANTES de buscar os slots abaixo — sem isso, salvar
+  // um padrão novo (ou só voltar a abrir a Agenda depois de um tempo)
+  // não mostraria os horários recém-gerados até o próximo carregamento.
+  // Também disparada no login (src/app/login/actions.ts) — ver comentário
+  // em recurring.ts sobre por que os dois pontos de entrada importam.
+  await renovarHorizonteDisponibilidade(supabase, professional.id);
+
+  const [{ data: slots }, { data: bookings }, { data: service }, { data: padrao }, { data: excecoes }] =
+    await Promise.all([
+      supabase
+        .from("availability")
+        .select("*")
+        .eq("professional_id", professional.id)
+        .gte("data", new Date().toISOString().slice(0, 10))
+        .order("data")
+        .order("hora_inicio")
+        .returns<Availability[]>(),
+      supabase
+        .from("bookings")
+        .select(
+          "id, data_hora, status, valor, cliente:clients(nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
+        )
+        .eq("professional_id", professional.id)
+        .order("data_hora", { ascending: true })
+        .returns<BookingRow[]>(),
+      supabase.from("services").select("duracao_min").eq("professional_id", professional.id).maybeSingle(),
+      supabase
+        .from("recurring_availability")
+        .select("id, dia_semana, hora_inicio, hora_fim")
+        .eq("professional_id", professional.id),
+      supabase
+        .from("availability_exceptions")
+        .select("id, data")
+        .eq("professional_id", professional.id)
+        .gte("data", new Date().toISOString().slice(0, 10))
+        .order("data"),
+    ]);
   const duracaoServicoMin = service?.duracao_min ?? 60;
 
   const pendentes = (bookings ?? []).filter((b) => b.status === "solicitado");
@@ -253,10 +284,118 @@ export default async function AgendaPage() {
       )}
 
       <div className="mt-10 border-t border-border pt-8">
-        <h2 className="font-display text-lg font-semibold">Disponibilidade</h2>
+        <h2 className="font-display text-lg font-semibold">Padrão semanal</h2>
         <p className="mt-1 text-sm text-foreground/60">
-          Adicione os horários em que você está livre — só esses horários
-          aparecem pro cliente na hora de agendar.
+          Defina os dias e o horário em que você atende toda semana — o
+          sistema gera os horários automaticamente para as próximas 8
+          semanas. Salvar um novo padrão substitui o anterior por inteiro.
+        </p>
+
+        <form
+          action={salvarPadraoRecorrente}
+          className="mt-4 flex flex-col gap-4 rounded-2xl border border-border bg-white p-6"
+        >
+          <div>
+            <p className="text-sm font-medium text-foreground/80">Dias da semana</p>
+            <div className="mt-2 flex gap-2">
+              {ORDEM_EXIBICAO_DIAS.map((dia) => (
+                <label
+                  key={dia}
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-border text-sm font-semibold transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary has-[:checked]:text-white"
+                >
+                  <input type="checkbox" name="dias" value={dia} className="sr-only" />
+                  {DIA_SEMANA_ABREV[dia]}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="padrao_hora_inicio" className="text-sm font-medium text-foreground/80">
+                Início
+              </label>
+              <input
+                id="padrao_hora_inicio"
+                name="hora_inicio"
+                type="time"
+                required
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <p className="pb-2.5 text-sm text-foreground/60">
+              Duração: {duracaoServicoMin} min (definida no seu cadastro)
+            </p>
+            <button
+              type="submit"
+              className="rounded-full bg-accent px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
+            >
+              Salvar padrão
+            </button>
+          </div>
+        </form>
+
+        {padrao && padrao.length > 0 ? (
+          <div className="mt-3 flex items-center justify-between rounded-xl border border-primary bg-primary-light px-4 py-3 text-sm">
+            <span className="font-medium text-primary">{textoPadraoRecorrente(padrao)}</span>
+            <form action={excluirPadraoRecorrente}>
+              <button type="submit" className="text-xs font-medium text-error hover:underline">
+                Encerrar padrão
+              </button>
+            </form>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-foreground/60">Nenhum padrão semanal ativo.</p>
+        )}
+
+        {padrao && padrao.length > 0 && (
+          <div className="mt-6">
+            <p className="text-sm font-medium text-foreground/80">
+              Bloquear um dia específico (exceção ao padrão)
+            </p>
+            <form action={adicionarExcecao} className="mt-2 flex flex-wrap items-end gap-3">
+              <input
+                type="date"
+                name="data"
+                required
+                min={new Date().toISOString().slice(0, 10)}
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                className="rounded-full border border-error px-4 py-2 text-sm font-semibold text-error transition-colors hover:bg-error-light"
+              >
+                Bloquear esse dia
+              </button>
+            </form>
+
+            {excecoes && excecoes.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2">
+                {excecoes.map((exc) => (
+                  <div
+                    key={exc.id}
+                    className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm"
+                  >
+                    <span>{formatData(exc.data)} · bloqueado</span>
+                    <form action={removerExcecao}>
+                      <input type="hidden" name="id" value={exc.id} />
+                      <button type="submit" className="text-xs font-medium text-primary hover:underline">
+                        Desbloquear
+                      </button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-10 border-t border-border pt-8">
+        <h2 className="font-display text-lg font-semibold">Horários avulsos</h2>
+        <p className="mt-1 text-sm text-foreground/60">
+          Adicione horários pontuais, além (ou independente) do padrão
+          semanal acima — só esses horários aparecem pro cliente na hora
+          de agendar.
         </p>
 
         <form
