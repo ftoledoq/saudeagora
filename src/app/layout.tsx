@@ -71,7 +71,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         <SplashScreen />
-        <SiteHeader />
+        <SiteHeader papel={papel} />
         <main className="flex-1 pb-16">{children}</main>
         <SiteFooter />
         <TabBarClient papel={papel} />

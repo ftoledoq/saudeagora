@@ -60,10 +60,21 @@ export function SplashScreen() {
     let cancelado = false;
     const supabase = createClient();
 
-    const carregamento = supabase.auth.getSession();
+    // .catch em vez de deixar a rejeição propagar: se getSession() falhar
+    // (rede instável, app retomado em segundo plano com o cliente Supabase
+    // num estado ruim), o Promise.all abaixo nunca resolveria — a splash
+    // ficaria opaca e bloqueando cliques pra sempre, sem erro visível. Isso
+    // trava QUALQUER toque na tela (não só um botão específico), o que bate
+    // com o sintoma relatado de "clica e não responde".
+    const carregamento = supabase.auth.getSession().catch(() => null);
     const minimo = new Promise((resolve) => setTimeout(resolve, DURACAO_MINIMA_MS));
+    // Teto de segurança independente do resultado de getSession() — mesmo
+    // que o .catch acima falhe por algum motivo imprevisto, isso garante
+    // que a splash nunca fica presa bloqueando a tela por mais que alguns
+    // segundos.
+    const teto = new Promise((resolve) => setTimeout(resolve, 4000));
 
-    Promise.all([carregamento, minimo]).then(() => {
+    Promise.race([Promise.all([carregamento, minimo]), teto]).then(() => {
       if (cancelado) return;
       setPronto(true);
       // Timeout explícito em vez de depender de onTransitionEnd — o evento
