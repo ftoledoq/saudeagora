@@ -1,58 +1,20 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatDataHora } from "@/lib/format";
 import { reportarProfissionalNaoCompareceu } from "./actions";
 import { AvaliarForm } from "./avaliar-form";
 import { ShareCardButton } from "@/components/share-card-button";
-
-// Mesmo conjunto de status que libera o chat na RLS (booking_chat_liberado,
-// migration 0017) — não duplicar essa lista sem motivo, mas não dá pra
-// importar SQL aqui, só manter as duas em sincronia manualmente.
-const STATUS_LIBERA_CHAT = ["confirmado", "concluido", "no_show_cliente", "no_show_profissional"];
-
-const SERVICE_LABEL: Record<string, string> = {
-  personal_trainer: "Personal Trainer",
-  massagem: "Massagem",
-  pilates: "Pilates",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  solicitado: "Solicitado",
-  confirmado: "Confirmado",
-  recusado: "Recusado",
-  concluido: "Concluído",
-  cancelado_cliente: "Cancelado (você)",
-  cancelado_profissional: "Cancelado pelo profissional",
-  no_show_cliente: "Você não compareceu",
-  no_show_profissional: "Profissional não compareceu",
-};
-
-const JANELA_AVALIACAO_DIAS = 3;
-const JANELA_NO_SHOW_MIN = 30;
-
-function elegívelParaAvaliar(dataHoraIso: string, status: string, jaAvaliado: boolean): boolean {
-  if (status !== "confirmado" || jaAvaliado) return false;
-  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
-  return minutosDesde >= 0 && minutosDesde <= JANELA_AVALIACAO_DIAS * 24 * 60;
-}
-
-// Mesma janela e condição da avaliação (status ainda "confirmado", sessão
-// já deve ter acontecido) — reaproveitada de propósito, sem schema novo. Se
-// um no-show for reportado depois, status muda e essa condição já deixa de
-// bater na renderização seguinte (recalculada do banco a cada carregamento,
-// nunca guardada) — não precisa de lógica extra pra "esconder de novo".
-function elegívelParaCompartilhar(dataHoraIso: string, status: string): boolean {
-  if (status !== "confirmado") return false;
-  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
-  return minutosDesde >= 0 && minutosDesde <= JANELA_AVALIACAO_DIAS * 24 * 60;
-}
-
-function podeReportarNoShow(dataHoraIso: string, status: string): boolean {
-  if (status !== "confirmado") return false;
-  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
-  return minutosDesde >= 0 && minutosDesde <= JANELA_NO_SHOW_MIN;
-}
+import { Avatar } from "@/components/avatar";
+import { TappableCard } from "@/components/tappable-card";
+import {
+  SERVICE_LABEL,
+  STATUS_LABEL,
+  STATUS_LIBERA_CHAT,
+  classeBadgeStatus,
+  elegívelParaAvaliar,
+  elegívelParaCompartilhar,
+  podeReportarNoShow,
+} from "./shared";
 
 function agora(): number {
   return Date.now();
@@ -67,10 +29,30 @@ type BookingRow = {
   status: string;
   valor: number;
   professional_id: string;
-  professional: { id: string; nome: string } | null;
+  professional: { id: string; nome: string; foto_storage_key: string | null } | null;
   service: { tipo: string } | null;
   review: { id: string; nota: number; comentario: string | null } | null;
 };
+
+function IconeChat() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16v12H7l-3 3V4Z" />
+    </svg>
+  );
+}
+
+function BotaoConversar({ bookingId, nome }: { bookingId: string; nome?: string }) {
+  return (
+    <a
+      href={`/chat/${bookingId}`}
+      className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-primary px-4 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary-light"
+    >
+      <IconeChat />
+      Conversar com {nome}
+    </a>
+  );
+}
 
 export default async function MinhasReservasPage() {
   const supabase = await createClient();
@@ -115,16 +97,35 @@ export default async function MinhasReservasPage() {
   const idsProfissionais = [...new Set((bookingsRaw ?? []).map((b) => b.professional_id))];
   const { data: profissionaisPublicos } =
     idsProfissionais.length > 0
-      ? await supabase.from("professionais_publicos").select("id, nome").in("id", idsProfissionais)
-      : { data: [] as { id: string; nome: string }[] };
-  const nomePorProfissional = new Map((profissionaisPublicos ?? []).map((p) => [p.id, p.nome]));
+      ? await supabase
+          .from("professionais_publicos")
+          .select("id, nome, foto_storage_key")
+          .in("id", idsProfissionais)
+      : { data: [] as { id: string; nome: string; foto_storage_key: string | null }[] };
+  const profissionalPorId = new Map((profissionaisPublicos ?? []).map((p) => [p.id, p]));
 
   const bookings: BookingRow[] = (bookingsRaw ?? []).map((b) => ({
     ...b,
-    professional: nomePorProfissional.has(b.professional_id)
-      ? { id: b.professional_id, nome: nomePorProfissional.get(b.professional_id)! }
-      : { id: b.professional_id, nome: "Profissional" },
+    professional: profissionalPorId.has(b.professional_id)
+      ? {
+          id: b.professional_id,
+          nome: profissionalPorId.get(b.professional_id)!.nome,
+          foto_storage_key: profissionalPorId.get(b.professional_id)!.foto_storage_key,
+        }
+      : { id: b.professional_id, nome: "Profissional", foto_storage_key: null },
   }));
+
+  const fotoUrlPorProfissional = new Map<string, string>();
+  await Promise.all(
+    (profissionaisPublicos ?? [])
+      .filter((p) => p.foto_storage_key)
+      .map(async (p) => {
+        const { data } = await supabase.storage
+          .from("professional-documents")
+          .createSignedUrl(p.foto_storage_key!, 300);
+        if (data?.signedUrl) fotoUrlPorProfissional.set(p.id, data.signedUrl);
+      })
+  );
 
   const agoraMs = agora();
   const proximos = (bookings ?? []).filter((b) => new Date(b.data_hora).getTime() >= agoraMs);
@@ -144,15 +145,26 @@ export default async function MinhasReservasPage() {
           <h2 className="font-display text-lg font-semibold">Próximos</h2>
           <div className="mt-3 flex flex-col gap-3">
             {proximos.map((b) => (
-              <div key={b.id} className="rounded-2xl border border-border bg-white p-5">
+              <TappableCard
+                key={b.id}
+                href={`/minhas-reservas/${b.id}`}
+                className="cursor-pointer rounded-2xl border border-border bg-white p-5 transition-colors hover:border-primary"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-display font-semibold">{b.professional?.nome}</p>
-                    <p className="text-sm text-foreground/60">
-                      {b.service && (SERVICE_LABEL[b.service.tipo] ?? b.service.tipo)}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <Avatar
+                      nome={b.professional?.nome ?? "?"}
+                      photoUrl={b.professional ? fotoUrlPorProfissional.get(b.professional.id) : null}
+                      size={44}
+                    />
+                    <div>
+                      <p className="font-display font-semibold">{b.professional?.nome}</p>
+                      <p className="text-sm text-foreground/60">
+                        {b.service && (SERVICE_LABEL[b.service.tipo] ?? b.service.tipo)}
+                      </p>
+                    </div>
                   </div>
-                  <span className="rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary">
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classeBadgeStatus(b.status)}`}>
                     {STATUS_LABEL[b.status] ?? b.status}
                   </span>
                 </div>
@@ -160,14 +172,9 @@ export default async function MinhasReservasPage() {
                   {formatDataHora(b.data_hora)} · R$ {b.valor}
                 </p>
                 {STATUS_LIBERA_CHAT.includes(b.status) && (
-                  <Link
-                    href={`/chat/${b.id}`}
-                    className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
-                  >
-                    Conversar com {b.professional?.nome}
-                  </Link>
+                  <BotaoConversar bookingId={b.id} nome={b.professional?.nome} />
                 )}
-              </div>
+              </TappableCard>
             ))}
           </div>
         </div>
@@ -187,15 +194,26 @@ export default async function MinhasReservasPage() {
             const compartilhavel = elegívelParaCompartilhar(b.data_hora, b.status);
 
             return (
-              <div key={b.id} className="rounded-2xl border border-border bg-white p-5">
+              <TappableCard
+                key={b.id}
+                href={`/minhas-reservas/${b.id}`}
+                className="cursor-pointer rounded-2xl border border-border bg-white p-5 transition-colors hover:border-primary"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-display font-semibold">{b.professional?.nome}</p>
-                    <p className="text-sm text-foreground/60">
-                      {b.service && (SERVICE_LABEL[b.service.tipo] ?? b.service.tipo)}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <Avatar
+                      nome={b.professional?.nome ?? "?"}
+                      photoUrl={b.professional ? fotoUrlPorProfissional.get(b.professional.id) : null}
+                      size={44}
+                    />
+                    <div>
+                      <p className="font-display font-semibold">{b.professional?.nome}</p>
+                      <p className="text-sm text-foreground/60">
+                        {b.service && (SERVICE_LABEL[b.service.tipo] ?? b.service.tipo)}
+                      </p>
+                    </div>
                   </div>
-                  <span className="rounded-full bg-border px-3 py-1 text-xs font-semibold text-foreground/70">
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${classeBadgeStatus(b.status)}`}>
                     {STATUS_LABEL[b.status] ?? b.status}
                   </span>
                 </div>
@@ -204,12 +222,7 @@ export default async function MinhasReservasPage() {
                 </p>
 
                 {STATUS_LIBERA_CHAT.includes(b.status) && (
-                  <Link
-                    href={`/chat/${b.id}`}
-                    className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
-                  >
-                    Conversar com {b.professional?.nome}
-                  </Link>
+                  <BotaoConversar bookingId={b.id} nome={b.professional?.nome} />
                 )}
 
                 {reportavel && (
@@ -241,7 +254,7 @@ export default async function MinhasReservasPage() {
                 ) : (
                   avaliavel && <AvaliarForm bookingId={b.id} />
                 )}
-              </div>
+              </TappableCard>
             );
           })}
         </div>

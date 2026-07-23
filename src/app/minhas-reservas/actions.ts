@@ -36,6 +36,7 @@ export async function avaliarSessao(formData: FormData) {
   }
 
   revalidatePath("/minhas-reservas");
+  revalidatePath(`/minhas-reservas/${bookingId}`);
 }
 
 // A janela de 30 min é reforçada pela RLS (trigger guard_booking_status_transition,
@@ -57,4 +58,5 @@ export async function reportarProfissionalNaoCompareceu(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/minhas-reservas");
+  revalidatePath(`/minhas-reservas/${bookingId}`);
 }
