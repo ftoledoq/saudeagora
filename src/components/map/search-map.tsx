@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -47,9 +47,15 @@ function FitToPins({ center, pins }: { center: [number, number]; pins: MapPin[] 
 export function SearchMap({
   center,
   pins,
+  onSelectPin,
 }: {
   center: [number, number];
   pins: MapPin[];
+  // Toque no pin abre o bottom sheet compacto (Tela 1 do wireframe) em vez
+  // do Popup padrão do Leaflet — os dois competiriam pelo mesmo papel
+  // (mostrar detalhe resumido do profissional), então o Popup foi
+  // removido em favor do bottom sheet controlado pelo componente pai.
+  onSelectPin?: (id: string) => void;
 }) {
   return (
     <MapContainer
@@ -64,13 +70,11 @@ export function SearchMap({
       />
       <FitToPins center={center} pins={pins} />
       {pins.map((p) => (
-        <Marker key={p.id} position={[p.lat, p.lng]}>
-          <Popup>
-            <strong>{p.nome}</strong>
-            <br />
-            {p.servico} · R$ {p.preco}
-          </Popup>
-        </Marker>
+        <Marker
+          key={p.id}
+          position={[p.lat, p.lng]}
+          eventHandlers={onSelectPin ? { click: () => onSelectPin(p.id) } : undefined}
+        />
       ))}
     </MapContainer>
   );

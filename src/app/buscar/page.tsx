@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { SearchMap, type MapPin } from "@/components/map/search-map-loader";
+import type { MapPin } from "@/components/map/search-map-loader";
 import { UsarLocalizacaoButton } from "@/components/usar-localizacao-button";
-import { Avatar } from "@/components/avatar";
 import { FiltrosBusca } from "./filtros-busca";
+import { VisaoBusca, type CardBusca } from "./visao-busca";
 import type { Bairro } from "@/types/database";
 
 // Distância vem de centro de bairro, não endereço exato — mostrar
@@ -238,6 +237,32 @@ export default async function BuscarPage({
     })
   );
 
+  // Dados achatados/serializáveis pra passar ao componente cliente
+  // (VisaoBusca) — Map não serializa por props do Server pro Client
+  // Component, então vira label pronto (string) aqui, não recalculado lá.
+  function paraCardBusca(c: Card): CardBusca {
+    const avaliacao = avaliacaoPorProfissional.get(c.professionalId);
+    return {
+      key: c.key,
+      professionalId: c.professionalId,
+      nome: c.nome,
+      bairroNome: c.bairro.nome,
+      bairroCidade: c.bairro.cidade,
+      bairroEstado: c.bairro.estado,
+      servicoLabel: SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo,
+      preco: c.servico.preco,
+      duracaoMin: c.servico.duracao_min,
+      distanciaLabel: c.distanciaKm != null ? faixaDistancia(c.distanciaKm) : null,
+      fotoUrl: fotoUrlPorProfissional.get(c.professionalId) ?? null,
+      avaliacaoLabel:
+        avaliacao && avaliacao.total > 0
+          ? `${avaliacao.media!.toFixed(1)} ★ (${avaliacao.total}) · ${avaliacao.atendimentos} atendimento${avaliacao.atendimentos === 1 ? "" : "s"}`
+          : null,
+    };
+  }
+  const cardsSerializaveis = cards.map(paraCardBusca);
+  const pertoDeVoceSerializavel = pertoDeVoce.map(paraCardBusca);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -253,105 +278,27 @@ export default async function BuscarPage({
         <UsarLocalizacaoButton bairros={todosBairros} />
       </div>
 
-      <FiltrosBusca
-        cidadesDisponiveis={cidadesDisponiveis}
-        cidadeSelecionada={cidadeSelecionada}
-        listaBairros={listaBairros}
-        bairroId={bairroId}
-        tipo={tipo}
-        raioKmParam={raioKmParam}
-        precoMaxParam={precoMaxParam}
-        ordenar={ordenar}
-        temBairroSelecionado={!!bairroSelecionado}
-      />
-
-      {pertoDeVoce.length > 0 && (
-        <div className="mt-8">
-          <h2 className="font-display text-lg font-semibold">
-            Perto de {bairroSelecionado?.nome}
-          </h2>
-          <div className="mt-3 -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
-            {pertoDeVoce.map((c) => {
-              const avaliacao = avaliacaoPorProfissional.get(c.professionalId);
-              return (
-                <Link
-                  key={c.key}
-                  href={`/profissionais/${c.professionalId}`}
-                  className="flex w-48 shrink-0 flex-col rounded-2xl border border-border bg-white p-4 transition-colors hover:border-primary"
-                >
-                  <div className="flex items-center gap-2">
-                    <Avatar nome={c.nome} photoUrl={fotoUrlPorProfissional.get(c.professionalId)} size={36} />
-                    <span className="rounded-full bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary">
-                      {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
-                    </span>
-                  </div>
-                  <h3 className="mt-2 font-display text-sm font-semibold">{c.nome}</h3>
-                  {avaliacao && avaliacao.total > 0 && (
-                    <p className="mt-0.5 text-xs text-primary">
-                      {avaliacao.media!.toFixed(1)} ★ ({avaliacao.total})
-                    </p>
-                  )}
-                  {c.distanciaKm != null && (
-                    <p className="mt-1 text-xs text-foreground/60">{faixaDistancia(c.distanciaKm)}</p>
-                  )}
-                  <p className="mt-1 text-sm font-semibold text-primary">R$ {c.servico.preco}</p>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-        <div className="flex flex-col gap-4">
-          {cards.length === 0 && (
-            <p className="text-sm text-foreground/60">
-              Nenhum profissional encontrado com esses filtros.
-            </p>
-          )}
-          {cards.map((c) => {
-            const avaliacao = avaliacaoPorProfissional.get(c.professionalId);
-            return (
-              <Link
-                key={c.key}
-                href={`/profissionais/${c.professionalId}`}
-                className="rounded-2xl border border-border bg-white p-5 transition-colors hover:border-primary"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <Avatar nome={c.nome} photoUrl={fotoUrlPorProfissional.get(c.professionalId)} size={48} />
-                    <div>
-                      <h2 className="font-display text-base font-semibold">{c.nome}</h2>
-                      <p className="text-sm text-foreground/60">
-                        {c.bairro.nome} — {c.bairro.cidade}/{c.bairro.estado}
-                        {c.distanciaKm != null && ` · ${faixaDistancia(c.distanciaKm)}`}
-                      </p>
-                      {avaliacao && avaliacao.total > 0 ? (
-                        <p className="mt-0.5 text-xs font-medium text-primary">
-                          {avaliacao.media!.toFixed(1)} ★ ({avaliacao.total}) · {avaliacao.atendimentos} atendimento
-                          {avaliacao.atendimentos === 1 ? "" : "s"}
-                        </p>
-                      ) : (
-                        <p className="mt-0.5 text-xs font-medium text-accent">✨ Novo no SaúdeAgora</p>
-                      )}
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary">
-                    {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-foreground/70">
-                  R$ {c.servico.preco} · {c.servico.duracao_min} min
-                </p>
-              </Link>
-            );
-          })}
-        </div>
-
-        <div className="h-[420px] overflow-hidden rounded-2xl border border-border lg:h-auto lg:min-h-[420px]">
-          <SearchMap center={mapCenter} pins={pins} />
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <FiltrosBusca
+          cidadesDisponiveis={cidadesDisponiveis}
+          cidadeSelecionada={cidadeSelecionada}
+          listaBairros={listaBairros}
+          bairroId={bairroId}
+          tipo={tipo}
+          raioKmParam={raioKmParam}
+          precoMaxParam={precoMaxParam}
+          ordenar={ordenar}
+          temBairroSelecionado={!!bairroSelecionado}
+        />
       </div>
+
+      <VisaoBusca
+        cards={cardsSerializaveis}
+        pins={pins}
+        mapCenter={mapCenter}
+        pertoDeVoce={pertoDeVoceSerializavel}
+        bairroSelecionadoNome={bairroSelecionado?.nome ?? null}
+      />
     </div>
   );
 }
