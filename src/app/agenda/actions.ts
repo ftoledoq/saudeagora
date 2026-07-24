@@ -25,14 +25,23 @@ async function getOwnProfessional(
   return professional;
 }
 
-export async function adicionarDisponibilidade(formData: FormData) {
+// Retorna { error } em vez de lançar (diferente do resto deste arquivo):
+// é chamada a partir de AdicionarDisponibilidadeForm via useActionState,
+// e Next.js redacta a mensagem de qualquer erro lançado por uma Server
+// Action em produção (por segurança, só sobra um "digest" opaco) — mesmo
+// quando chamada indiretamente por outra função no mesmo arquivo "use
+// server". Só devolvendo o erro como valor normal é que a mensagem
+// amigável chega inteira até a tela. Descoberto ao testar ao vivo o
+// bloqueio por exceção (migration 0025): o insert era rejeitado
+// corretamente, mas a tela quebrava pra uma página de erro genérica.
+export async function adicionarDisponibilidade(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
 
   const data = String(formData.get("data") ?? "");
   const horaInicio = String(formData.get("hora_inicio") ?? "");
 
-  if (!data || !horaInicio) throw new Error("Preencha data e horário.");
+  if (!data || !horaInicio) return { error: "Preencha data e horário." };
 
   // "Fim" nunca vem do formulário (era o bug: início e fim caindo no mesmo
   // valor padrão do seletor de hora nativo, gerando horário de duração
@@ -43,7 +52,7 @@ export async function adicionarDisponibilidade(formData: FormData) {
     .select("duracao_min")
     .eq("professional_id", professionalId)
     .maybeSingle();
-  if (!service) throw new Error("Cadastre seu serviço antes de adicionar disponibilidade.");
+  if (!service) return { error: "Cadastre seu serviço antes de adicionar disponibilidade." };
 
   const horaFim = somarMinutos(horaInicio, service.duracao_min);
 
@@ -55,12 +64,23 @@ export async function adicionarDisponibilidade(formData: FormData) {
   });
   if (error) {
     if (error.message.includes("availability_professional_id_data_hora_inicio_key")) {
-      throw new Error("Você já tem um horário cadastrado nesse dia e hora de início.");
+      return { error: "Você já tem um horário cadastrado nesse dia e hora de início." };
     }
-    throw new Error(error.message);
+    // Trigger guard_availability_exception (migration 0025) — bug real
+    // encontrado em teste: dava pra criar horário avulso num dia que o
+    // próprio profissional tinha acabado de bloquear como exceção ao
+    // padrão. Reforçado no banco, não só aqui — esta mensagem só traduz
+    // o erro pra algo legível.
+    if (error.message.includes("bloqueado por exceção")) {
+      return {
+        error: "Esse dia está bloqueado por exceção ao padrão recorrente — desbloqueie antes de adicionar horário.",
+      };
+    }
+    return { error: error.message };
   }
 
   revalidatePath("/agenda");
+  return { error: null };
 }
 
 export async function removerDisponibilidade(formData: FormData) {

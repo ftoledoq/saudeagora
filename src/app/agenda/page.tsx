@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
-  adicionarDisponibilidade,
   removerDisponibilidade,
   salvarPadraoRecorrente,
   excluirPadraoRecorrente,
@@ -19,6 +18,7 @@ import { formatDataHora, formatData } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
 import { TappableCard } from "@/components/tappable-card";
 import { AvaliarClienteForm } from "./avaliar-cliente-form";
+import { AdicionarDisponibilidadeForm } from "./adicionar-disponibilidade-form";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
@@ -446,50 +446,7 @@ export default async function AgendaPage() {
           de agendar.
         </p>
 
-        <form
-          action={adicionarDisponibilidade}
-          className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-white p-6"
-        >
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="data" className="text-sm font-medium text-foreground/80">
-              Data
-            </label>
-            <input
-              id="data"
-              name="data"
-              type="date"
-              required
-              min={new Date().toISOString().slice(0, 10)}
-              className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="hora_inicio" className="text-sm font-medium text-foreground/80">
-              Início
-            </label>
-            <input
-              id="hora_inicio"
-              name="hora_inicio"
-              type="time"
-              required
-              className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-            />
-          </div>
-          {/* "Fim" não é mais digitado — calculado no servidor a partir da
-              duração do serviço (evita o bug de início/fim caindo no mesmo
-              valor padrão do seletor nativo e gerando horário de duração
-              zero). Só mostra pra que o profissional saiba o que está
-              reservando. */}
-          <p className="pb-2.5 text-sm text-foreground/60">
-            Duração: {duracaoServicoMin} min (definida no seu cadastro)
-          </p>
-          <button
-            type="submit"
-            className="rounded-full bg-accent px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
-          >
-            Adicionar
-          </button>
-        </form>
+        <AdicionarDisponibilidadeForm duracaoServicoMin={duracaoServicoMin} />
 
         <div className="mt-4 flex flex-col gap-2">
           {(!slots || slots.length === 0) && (
