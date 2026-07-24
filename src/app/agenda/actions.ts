@@ -271,3 +271,36 @@ export async function responderAvaliacao(formData: FormData) {
 
   revalidatePath("/agenda");
 }
+
+// Espelha avaliarSessao (src/app/minhas-reservas/actions.ts) no sentido
+// inverso — profissional avalia cliente. A elegibilidade real (status
+// 'confirmado', dentro de 3 dias, horário já passado) é reforçada pela
+// RLS de client_reviews (migration 0024) — não confiar só na ausência do
+// prompt na UI.
+export async function avaliarCliente(formData: FormData) {
+  const supabase = await createClient();
+  await getOwnProfessional(supabase);
+
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const nota = Number(formData.get("nota") ?? "0");
+  const comentario = String(formData.get("comentario") ?? "").trim() || null;
+
+  if (!(nota >= 1 && nota <= 5)) throw new Error("Escolha uma nota de 1 a 5.");
+
+  const { error } = await supabase.from("client_reviews").insert({
+    booking_id: bookingId,
+    nota,
+    comentario,
+  });
+  if (error) {
+    if (error.message.includes("client_reviews_booking_id_key")) {
+      throw new Error("Você já avaliou esse cliente nesse atendimento.");
+    }
+    throw new Error(
+      "Não foi possível registrar a avaliação — a janela de 3 dias após o atendimento pode ter expirado."
+    );
+  }
+
+  revalidatePath("/agenda");
+  revalidatePath(`/agenda/${bookingId}`);
+}

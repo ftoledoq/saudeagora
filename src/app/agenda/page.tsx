@@ -18,11 +18,13 @@ import type { Availability } from "@/types/database";
 import { formatDataHora, formatData } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
 import { TappableCard } from "@/components/tappable-card";
+import { AvaliarClienteForm } from "./avaliar-cliente-form";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
   STATUS_LIBERA_CHAT,
   podeReportarNoShow,
+  elegívelParaAvaliarCliente,
   DIA_SEMANA_ABREV,
   ORDEM_EXIBICAO_DIAS,
   textoPadraoRecorrente,
@@ -40,7 +42,13 @@ type BookingRow = {
   data_hora: string;
   status: string;
   valor: number;
-  cliente: { nome: string; telefone: string; bio: string | null; foto_storage_key: string | null } | null;
+  cliente: {
+    id: string;
+    nome: string;
+    telefone: string;
+    bio: string | null;
+    foto_storage_key: string | null;
+  } | null;
   service: { tipo: string; duracao_min: number } | null;
   endereco: {
     rua: string;
@@ -94,7 +102,7 @@ export default async function AgendaPage() {
       supabase
         .from("bookings")
         .select(
-          "id, data_hora, status, valor, cliente:clients(nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
+          "id, data_hora, status, valor, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
         )
         .eq("professional_id", professional.id)
         .order("data_hora", { ascending: true })
@@ -130,6 +138,32 @@ export default async function AgendaPage() {
           .createSignedUrl(b.cliente!.foto_storage_key!, 300);
         if (data?.signedUrl) fotoUrlPorBooking.set(b.id, data.signedUrl);
       })
+  );
+
+  // Nota do cliente: só busca a partir daqui (histórico), NUNCA pro bloco
+  // de pedidos pendentes acima — decisão explícita do founder de não
+  // deixar a média influenciar a decisão de confirmar/recusar um pedido
+  // novo. bookingsJaAvaliados sabe se cada atendimento já foi avaliado
+  // (pra esconder o formulário depois de enviar); mediaPorCliente é a
+  // média agregada, uma por cliente, mostrada só no histórico como contexto.
+  const idsOutros = outros.map((b) => b.id);
+  const { data: avaliacoesFeitas } =
+    idsOutros.length > 0
+      ? await supabase.from("client_reviews").select("booking_id").in("booking_id", idsOutros)
+      : { data: [] as { booking_id: string }[] };
+  const bookingsJaAvaliados = new Set((avaliacoesFeitas ?? []).map((a) => a.booking_id));
+
+  const idsClientesOutros = [
+    ...new Set(outros.map((b) => b.cliente?.id).filter((id): id is string => !!id)),
+  ];
+  const mediaPorCliente = new Map<string, { media: number | null; total: number }>();
+  await Promise.all(
+    idsClientesOutros.map(async (clienteId) => {
+      const { data } = await supabase
+        .rpc("media_avaliacoes_cliente", { p_cliente_id: clienteId })
+        .maybeSingle<{ media: number | null; total: number }>();
+      if (data) mediaPorCliente.set(clienteId, data);
+    })
   );
 
   return (
@@ -205,6 +239,9 @@ export default async function AgendaPage() {
           <div className="mt-3 flex flex-col gap-3">
             {outros.map((b) => {
               const reportavel = podeReportarNoShow(b.data_hora, b.status);
+              const jaAvaliouCliente = bookingsJaAvaliados.has(b.id);
+              const avaliavelCliente = elegívelParaAvaliarCliente(b.data_hora, b.status, jaAvaliouCliente);
+              const mediaCliente = b.cliente ? mediaPorCliente.get(b.cliente.id) : undefined;
 
               return (
                 <TappableCard
@@ -215,6 +252,15 @@ export default async function AgendaPage() {
                   <div className="flex items-center justify-between">
                     <span>
                       {b.cliente?.nome} · {formatDataHora(b.data_hora)}
+                      {/* Só aparece aqui, no histórico — nunca no bloco de
+                          pedidos pendentes acima, de propósito (ver
+                          comentário na busca da média). Sempre agregada,
+                          nunca comentário individual. */}
+                      {mediaCliente && mediaCliente.total > 0 && (
+                        <span className="ml-2 text-xs font-medium text-foreground/50">
+                          ★ {mediaCliente.media?.toFixed(1)} ({mediaCliente.total})
+                        </span>
+                      )}
                     </span>
                     <span className="text-foreground/60">
                       {STATUS_LABEL[b.status] ?? b.status}
@@ -276,6 +322,8 @@ export default async function AgendaPage() {
                       )}
                     </div>
                   )}
+
+                  {avaliavelCliente && <AvaliarClienteForm bookingId={b.id} />}
                 </TappableCard>
               );
             })}

@@ -36,6 +36,20 @@ export function podeReportarNoShow(dataHoraIso: string, status: string): boolean
   return minutosDesde >= 0 && minutosDesde <= JANELA_NO_SHOW_MIN;
 }
 
+// Mesma janela da avaliação do profissional (src/app/minhas-reservas/shared.ts)
+// — espelhada aqui pro lado do profissional avaliar o cliente.
+const JANELA_AVALIACAO_DIAS = 3;
+
+export function elegívelParaAvaliarCliente(
+  dataHoraIso: string,
+  status: string,
+  jaAvaliado: boolean
+): boolean {
+  if (status !== "confirmado" || jaAvaliado) return false;
+  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
+  return minutosDesde >= 0 && minutosDesde <= JANELA_AVALIACAO_DIAS * 24 * 60;
+}
+
 // Soma minutos a "HH:MM", sem depender de Date (mesmo cuidado de fuso já
 // documentado em src/lib/format.ts) — só aritmética de string. Usado tanto
 // no horário avulso quanto no padrão recorrente, sempre pra calcular "Fim"
