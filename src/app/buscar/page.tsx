@@ -82,6 +82,7 @@ export default async function BuscarPage({
     preco_max?: string;
     ordenar?: string;
     raio_km?: string;
+    visao?: string;
   }>;
 }) {
   const {
@@ -91,7 +92,9 @@ export default async function BuscarPage({
     preco_max: precoMaxParam,
     ordenar,
     raio_km: raioKmParam,
+    visao: visaoParam,
   } = await searchParams;
+  const visaoInicial = visaoParam === "mapa" ? "mapa" : "lista";
   const raioKm = raioKmParam ? Number(raioKmParam) : null;
   const supabase = await createClient();
 
@@ -289,6 +292,7 @@ export default async function BuscarPage({
           precoMaxParam={precoMaxParam}
           ordenar={ordenar}
           temBairroSelecionado={!!bairroSelecionado}
+          visaoAtual={visaoInicial}
         />
       </div>
 
@@ -298,6 +302,7 @@ export default async function BuscarPage({
         mapCenter={mapCenter}
         pertoDeVoce={pertoDeVoceSerializavel}
         bairroSelecionadoNome={bairroSelecionado?.nome ?? null}
+        visaoInicial={visaoInicial}
       />
     </div>
   );

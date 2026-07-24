@@ -88,6 +88,16 @@ export async function removerDisponibilidade(formData: FormData) {
   const { id: professionalId } = await getOwnProfessional(supabase);
 
   const id = String(formData.get("id") ?? "");
+
+  const { data: slot } = await supabase
+    .from("availability")
+    .select("data, hora_inicio")
+    .eq("id", id)
+    .eq("professional_id", professionalId)
+    .eq("status", "livre")
+    .maybeSingle();
+  if (!slot) return;
+
   const { error } = await supabase
     .from("availability")
     .delete()
@@ -95,6 +105,31 @@ export async function removerDisponibilidade(formData: FormData) {
     .eq("professional_id", professionalId)
     .eq("status", "livre");
   if (error) throw new Error(error.message);
+
+  // Bug real encontrado em teste: remover um horário gerado pelo padrão
+  // recorrente não registrava exceção nenhuma — a próxima renovação do
+  // horizonte (recurring.ts) recriava a mesma linha, porque nada indicava
+  // que aquele dia específico tinha sido removido de propósito (o horário
+  // reaparecia como "Livre" depois de revisitar a Agenda). Corrigido
+  // registrando a mesma exceção que "Bloquear um dia" já usa, sempre que
+  // o horário removido bate com uma regra ativa do padrão (mesmo dia da
+  // semana + mesma hora de início) — reaproveita o mecanismo existente em
+  // vez de um novo, e o profissional já pode desfazer isso na lista de
+  // exceções ("Desbloquear"). Horário avulso de verdade (sem regra
+  // correspondente) continua só sendo apagado, sem gerar exceção nenhuma.
+  const diaSemana = new Date(`${slot.data}T00:00:00Z`).getUTCDay();
+  const { data: regraDoPadrao } = await supabase
+    .from("recurring_availability")
+    .select("id")
+    .eq("professional_id", professionalId)
+    .eq("dia_semana", diaSemana)
+    .eq("hora_inicio", slot.hora_inicio)
+    .maybeSingle();
+  if (regraDoPadrao) {
+    await supabase
+      .from("availability_exceptions")
+      .upsert({ professional_id: professionalId, data: slot.data }, { onConflict: "professional_id,data" });
+  }
 
   revalidatePath("/agenda");
 }

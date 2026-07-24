@@ -25,7 +25,7 @@ export function BloquearExcecaoForm() {
       {state.error && <p className="w-full text-xs text-error">{state.error}</p>}
       <div className="flex flex-col gap-1.5">
         <label htmlFor="excecao_data_inicio" className="text-xs font-medium text-foreground/70">
-          Início
+          Data de início
         </label>
         <input
           id="excecao_data_inicio"
@@ -38,7 +38,7 @@ export function BloquearExcecaoForm() {
       </div>
       <div className="flex flex-col gap-1.5">
         <label htmlFor="excecao_data_fim" className="text-xs font-medium text-foreground/70">
-          Fim (opcional)
+          Data de fim (opcional)
         </label>
         <input
           id="excecao_data_fim"

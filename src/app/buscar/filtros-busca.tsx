@@ -25,6 +25,7 @@ export function FiltrosBusca({
   precoMaxParam,
   ordenar,
   temBairroSelecionado,
+  visaoAtual,
 }: {
   cidadesDisponiveis: string[];
   cidadeSelecionada: string;
@@ -35,6 +36,7 @@ export function FiltrosBusca({
   precoMaxParam?: string;
   ordenar?: string;
   temBairroSelecionado: boolean;
+  visaoAtual: "lista" | "mapa";
 }) {
   const filtrosAtivos = [bairroId, tipo, raioKmParam, precoMaxParam].filter(Boolean).length;
   const [aberto, setAberto] = useState(false);
@@ -64,6 +66,9 @@ export function FiltrosBusca({
           method="get"
           className="mt-3 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-white p-4"
         >
+          {/* Preserva a view (Lista/Mapa) atual ao reenviar o formulário
+              de filtros — sem isso, filtrar sempre voltava pra Lista. */}
+          <input type="hidden" name="visao" value={visaoAtual} />
           <div className="flex flex-col gap-1.5">
             <label htmlFor="cidade" className="text-sm font-medium text-foreground/80">
               Cidade

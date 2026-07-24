@@ -49,6 +49,7 @@ export function AdicionarDisponibilidadeForm({ duracaoServicoMin }: { duracaoSer
           name="hora_inicio"
           type="time"
           required
+          placeholder="08:00"
           className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
         />
       </div>

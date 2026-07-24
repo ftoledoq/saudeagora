@@ -19,6 +19,7 @@ import { TappableCard } from "@/components/tappable-card";
 import { AvaliarClienteForm } from "./avaliar-cliente-form";
 import { AdicionarDisponibilidadeForm } from "./adicionar-disponibilidade-form";
 import { BloquearExcecaoForm } from "./bloquear-excecao-form";
+import { SeletorDiasSemana } from "./seletor-dias-semana";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
@@ -317,17 +318,7 @@ export default async function AgendaPage() {
         >
           <div>
             <p className="text-sm font-medium text-foreground/80">Dias da semana</p>
-            <div className="mt-2 flex gap-2">
-              {ORDEM_EXIBICAO_DIAS.map((dia) => (
-                <label
-                  key={dia}
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-border text-sm font-semibold transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary has-[:checked]:text-white"
-                >
-                  <input type="checkbox" name="dias" value={dia} className="sr-only" />
-                  {DIA_SEMANA_ABREV[dia]}
-                </label>
-              ))}
-            </div>
+            <SeletorDiasSemana ordemExibicao={ORDEM_EXIBICAO_DIAS} abreviacoes={DIA_SEMANA_ABREV} />
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
@@ -339,6 +330,7 @@ export default async function AgendaPage() {
                 name="hora_inicio"
                 type="time"
                 required
+                placeholder="08:00"
                 className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
               />
             </div>
@@ -405,9 +397,9 @@ export default async function AgendaPage() {
       <div className="mt-10 border-t border-border pt-8">
         <h2 className="font-display text-lg font-semibold">Horários avulsos</h2>
         <p className="mt-1 text-sm text-foreground/60">
-          Adicione horários pontuais, além (ou independente) do padrão
-          semanal acima — só esses horários aparecem pro cliente na hora
-          de agendar.
+          Horários gerados pelo seu padrão semanal aparecem aqui
+          automaticamente — adicione horários extras pontuais, ou remova
+          algum dia específico se precisar.
         </p>
 
         <AdicionarDisponibilidadeForm duracaoServicoMin={duracaoServicoMin} />
@@ -418,38 +410,54 @@ export default async function AgendaPage() {
               Nenhum horário cadastrado ainda.
             </p>
           )}
-          {slots?.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3"
-            >
-              <span className="text-sm">
-                {formatData(s.data)} · {s.hora_inicio.slice(0, 5)}–{s.hora_fim.slice(0, 5)}
-              </span>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    s.status === "livre"
-                      ? "bg-primary-light text-primary"
-                      : "bg-border text-foreground/60"
-                  }`}
-                >
-                  {s.status === "livre" ? "Livre" : "Reservado"}
+          {slots?.map((s) => {
+            // Diferenciação visual entre horário gerado pelo padrão e
+            // avulso manual: não tem coluna de origem na tabela — inferido
+            // comparando dia da semana + hora de início contra as regras
+            // ativas do padrão (mesma checagem que removerDisponibilidade
+            // usa pra decidir se registra exceção ao remover).
+            const diaSemana = new Date(`${s.data}T00:00:00Z`).getUTCDay();
+            const doPadrao = (padrao ?? []).some(
+              (r) => r.dia_semana === diaSemana && r.hora_inicio === s.hora_inicio
+            );
+            return (
+              <div
+                key={s.id}
+                className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3"
+              >
+                <span className="text-sm">
+                  {formatData(s.data)} · {s.hora_inicio.slice(0, 5)}–{s.hora_fim.slice(0, 5)}
+                  {doPadrao && (
+                    <span className="ml-2 rounded-full bg-border px-2 py-0.5 text-[11px] font-medium text-foreground/60">
+                      Do padrão
+                    </span>
+                  )}
                 </span>
-                {s.status === "livre" && (
-                  <form action={removerDisponibilidade}>
-                    <input type="hidden" name="id" value={s.id} />
-                    <button
-                      type="submit"
-                      className="text-xs font-medium text-error hover:underline"
-                    >
-                      Remover
-                    </button>
-                  </form>
-                )}
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      s.status === "livre"
+                        ? "bg-primary-light text-primary"
+                        : "bg-border text-foreground/60"
+                    }`}
+                  >
+                    {s.status === "livre" ? "Livre" : "Reservado"}
+                  </span>
+                  {s.status === "livre" && (
+                    <form action={removerDisponibilidade}>
+                      <input type="hidden" name="id" value={s.id} />
+                      <button
+                        type="submit"
+                        className="text-xs font-medium text-error hover:underline"
+                      >
+                        Remover
+                      </button>
+                    </form>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

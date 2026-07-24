@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar } from "@/components/avatar";
 import { SearchMap, type MapPin } from "@/components/map/search-map-loader";
 
@@ -33,16 +34,36 @@ export function VisaoBusca({
   mapCenter,
   pertoDeVoce,
   bairroSelecionadoNome,
+  visaoInicial,
 }: {
   cards: CardBusca[];
   pins: MapPin[];
   mapCenter: [number, number];
   pertoDeVoce: CardBusca[];
   bairroSelecionadoNome: string | null;
+  visaoInicial: "lista" | "mapa";
 }) {
-  const [visao, setVisao] = useState<"lista" | "mapa">("lista");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Bug real reportado: a view ficava só em estado local (useState) — ao
+  // tocar num pin/card e navegar pro perfil do profissional, voltar
+  // (botão "voltar" do navegador) remonta /buscar do zero, e o estado
+  // local resetava sempre pra "lista", mesmo que a pessoa estivesse na
+  // Visão Mapa. Agora a view vive na URL (?visao=mapa) — o histórico do
+  // navegador guarda ela junto, então "voltar" restaura a view certa.
+  // router.replace (não push): trocar Lista/Mapa não deveria empilhar uma
+  // entrada nova no histórico, senão "voltar" ficaria preso alternando
+  // entre as duas views em vez de sair da tela de busca.
+  const [visao, setVisaoState] = useState<"lista" | "mapa">(visaoInicial);
   const [pinSelecionadoId, setPinSelecionadoId] = useState<string | null>(null);
   const cardDoPinSelecionado = cards.find((c) => c.key === pinSelecionadoId) ?? null;
+
+  function setVisao(nova: "lista" | "mapa") {
+    setVisaoState(nova);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("visao", nova);
+    router.replace(`/buscar?${params.toString()}`, { scroll: false });
+  }
 
   return (
     <div className="mt-6">
