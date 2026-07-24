@@ -64,7 +64,25 @@ export function TabBarClient({ papel }: { papel: Papel }) {
     // causar atraso visual perceptível durante o scroll, dando a impressão
     // de que a barra "acompanha" a rolagem em vez de ficar fixa — relatado
     // como comportamento de app amador. Sólido é imediato, sem essa dúvida.
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background">
+    //
+    // translateZ(0) força a barra pra sua própria camada de composição GPU
+    // — isolada do repaint pesado do resto da página. Investigação de bug
+    // reportado na tela de Busca ("tab bar sobrepondo o meio da lista"):
+    // revisão de código e teste com scroll simulado não encontraram
+    // nenhum ancestral com transform/filter/perspective quebrando o
+    // containing block do position:fixed (o que causaria exatamente esse
+    // sintoma) — a barra mediu corretamente fixa no rodapé do viewport em
+    // todo teste que rodei. A explicação mais provável pra um sintoma real
+    // em aparelho físico, que automação de navegador não reproduz, é jank
+    // de repintura causado pelo carregamento de tiles do Leaflet
+    // competindo pelo mesmo thread de composição durante o scroll — mesma
+    // classe de problema, mitigação padrão. Não confirmado em dispositivo
+    // físico; se o sintoma persistir depois deste fix, a causa é outra e
+    // precisa de investigação nova, não mais deste mesmo diagnóstico.
+    <nav
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background"
+      style={{ transform: "translateZ(0)" }}
+    >
       <div className="mx-auto flex max-w-md items-stretch justify-around">
         {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");

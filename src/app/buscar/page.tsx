@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SearchMap, type MapPin } from "@/components/map/search-map-loader";
 import { UsarLocalizacaoButton } from "@/components/usar-localizacao-button";
+import { Avatar } from "@/components/avatar";
+import { FiltrosBusca } from "./filtros-busca";
 import type { Bairro } from "@/types/database";
 
 // Distância vem de centro de bairro, não endereço exato — mostrar
@@ -51,6 +53,7 @@ type Servico = {
 type ProfessionalPublico = {
   id: string;
   nome: string;
+  foto_storage_key: string | null;
   bairro_id: string;
   bairro_nome: string;
   bairro_cidade: string;
@@ -67,6 +70,8 @@ type Card = {
   servico: Servico;
   distanciaKm: number | null;
 };
+
+type Avaliacao = { media: number | null; total: number; atendimentos: number };
 
 export default async function BuscarPage({
   searchParams,
@@ -186,6 +191,53 @@ export default async function BuscarPage({
     lng: c.bairro.longitude,
   }));
 
+  // Foto e avaliação por profissional (não por card — um profissional
+  // pode aparecer em mais de um card se tiver mais de um serviço) — mesma
+  // fonte de dado e mesmo cálculo já usados no perfil público
+  // (src/app/profissionais/[id]/page.tsx): reviews agregadas por
+  // booking.professional_id + atendimentos_realizados_count (RPC que já
+  // existe, migration 0016). Reaproveitado aqui, não recriado.
+  const idsProfissionaisExibidos = [...new Set(cards.map((c) => c.professionalId))];
+  const fotoUrlPorProfissional = new Map<string, string>();
+  const avaliacaoPorProfissional = new Map<string, Avaliacao>();
+  await Promise.all(
+    idsProfissionaisExibidos.map(async (id) => {
+      const prof = (profissionais ?? []).find((p) => p.id === id);
+      const tarefas: Promise<unknown>[] = [];
+
+      if (prof?.foto_storage_key) {
+        tarefas.push(
+          supabase.storage
+            .from("professional-documents")
+            .createSignedUrl(prof.foto_storage_key, 300)
+            .then(({ data }) => {
+              if (data?.signedUrl) fotoUrlPorProfissional.set(id, data.signedUrl);
+            })
+        );
+      }
+
+      tarefas.push(
+        Promise.all([
+          supabase
+            .from("reviews")
+            .select("nota, booking:bookings!inner(professional_id)")
+            .eq("booking.professional_id", id)
+            .returns<{ nota: number }[]>(),
+          supabase.rpc("atendimentos_realizados_count", { p_professional_id: id }),
+        ]).then(([{ data: reviews }, { data: atendimentos }]) => {
+          const total = reviews?.length ?? 0;
+          avaliacaoPorProfissional.set(id, {
+            total,
+            media: total > 0 ? reviews!.reduce((soma, r) => soma + r.nota, 0) / total : null,
+            atendimentos: atendimentos ?? 0,
+          });
+        })
+      );
+
+      await Promise.all(tarefas);
+    })
+  );
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -201,123 +253,17 @@ export default async function BuscarPage({
         <UsarLocalizacaoButton bairros={todosBairros} />
       </div>
 
-      <form
-        method="get"
-        className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-white p-4"
-      >
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="cidade" className="text-sm font-medium text-foreground/80">
-            Cidade
-          </label>
-          <select
-            id="cidade"
-            name="cidade"
-            defaultValue={cidadeSelecionada}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-          >
-            {cidadesDisponiveis.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="bairro" className="text-sm font-medium text-foreground/80">
-            Bairro
-          </label>
-          <select
-            id="bairro"
-            name="bairro"
-            defaultValue={bairroId ?? ""}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Todos em {cidadeSelecionada}</option>
-            {listaBairros.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.nome}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="tipo" className="text-sm font-medium text-foreground/80">
-            Serviço
-          </label>
-          <select
-            id="tipo"
-            name="tipo"
-            defaultValue={tipo ?? ""}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Todos</option>
-            {Object.entries(SERVICE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="raio_km" className="text-sm font-medium text-foreground/80">
-            Raio de busca
-          </label>
-          <select
-            id="raio_km"
-            name="raio_km"
-            defaultValue={raioKmParam ?? ""}
-            disabled={!bairroSelecionado}
-            title={!bairroSelecionado ? "Selecione um bairro pra usar raio de busca" : undefined}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-50"
-          >
-            <option value="">Qualquer distância</option>
-            <option value="2">Até 2 km</option>
-            <option value="5">Até 5 km</option>
-            <option value="10">Até 10 km</option>
-            <option value="20">Até 20 km</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="preco_max" className="text-sm font-medium text-foreground/80">
-            Preço até (R$)
-          </label>
-          <input
-            id="preco_max"
-            name="preco_max"
-            type="number"
-            min="1"
-            defaultValue={precoMaxParam ?? ""}
-            placeholder="Sem limite"
-            className="w-32 rounded-lg border border-border bg-white px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="ordenar" className="text-sm font-medium text-foreground/80">
-            Ordenar por
-          </label>
-          <select
-            id="ordenar"
-            name="ordenar"
-            defaultValue={ordenar ?? "distancia"}
-            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-          >
-            <option value="distancia">Distância</option>
-            <option value="preco">Preço</option>
-          </select>
-        </div>
-
-        <button
-          type="submit"
-          className="rounded-full bg-accent px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
-        >
-          Buscar
-        </button>
-      </form>
+      <FiltrosBusca
+        cidadesDisponiveis={cidadesDisponiveis}
+        cidadeSelecionada={cidadeSelecionada}
+        listaBairros={listaBairros}
+        bairroId={bairroId}
+        tipo={tipo}
+        raioKmParam={raioKmParam}
+        precoMaxParam={precoMaxParam}
+        ordenar={ordenar}
+        temBairroSelecionado={!!bairroSelecionado}
+      />
 
       {pertoDeVoce.length > 0 && (
         <div className="mt-8">
@@ -325,22 +271,33 @@ export default async function BuscarPage({
             Perto de {bairroSelecionado?.nome}
           </h2>
           <div className="mt-3 -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
-            {pertoDeVoce.map((c) => (
-              <Link
-                key={c.key}
-                href={`/profissionais/${c.professionalId}`}
-                className="flex w-48 shrink-0 flex-col rounded-2xl border border-border bg-white p-4 transition-colors hover:border-primary"
-              >
-                <span className="rounded-full self-start bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary">
-                  {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
-                </span>
-                <h3 className="mt-2 font-display text-sm font-semibold">{c.nome}</h3>
-                {c.distanciaKm != null && (
-                  <p className="mt-1 text-xs text-foreground/60">{faixaDistancia(c.distanciaKm)}</p>
-                )}
-                <p className="mt-1 text-sm font-semibold text-primary">R$ {c.servico.preco}</p>
-              </Link>
-            ))}
+            {pertoDeVoce.map((c) => {
+              const avaliacao = avaliacaoPorProfissional.get(c.professionalId);
+              return (
+                <Link
+                  key={c.key}
+                  href={`/profissionais/${c.professionalId}`}
+                  className="flex w-48 shrink-0 flex-col rounded-2xl border border-border bg-white p-4 transition-colors hover:border-primary"
+                >
+                  <div className="flex items-center gap-2">
+                    <Avatar nome={c.nome} photoUrl={fotoUrlPorProfissional.get(c.professionalId)} size={36} />
+                    <span className="rounded-full bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary">
+                      {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
+                    </span>
+                  </div>
+                  <h3 className="mt-2 font-display text-sm font-semibold">{c.nome}</h3>
+                  {avaliacao && avaliacao.total > 0 && (
+                    <p className="mt-0.5 text-xs text-primary">
+                      {avaliacao.media!.toFixed(1)} ★ ({avaliacao.total})
+                    </p>
+                  )}
+                  {c.distanciaKm != null && (
+                    <p className="mt-1 text-xs text-foreground/60">{faixaDistancia(c.distanciaKm)}</p>
+                  )}
+                  <p className="mt-1 text-sm font-semibold text-primary">R$ {c.servico.preco}</p>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
@@ -352,29 +309,43 @@ export default async function BuscarPage({
               Nenhum profissional encontrado com esses filtros.
             </p>
           )}
-          {cards.map((c) => (
-            <Link
-              key={c.key}
-              href={`/profissionais/${c.professionalId}`}
-              className="rounded-2xl border border-border bg-white p-5 transition-colors hover:border-primary"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h2 className="font-display text-base font-semibold">{c.nome}</h2>
-                  <p className="text-sm text-foreground/60">
-                    {c.bairro.nome} — {c.bairro.cidade}/{c.bairro.estado}
-                    {c.distanciaKm != null && ` · ${faixaDistancia(c.distanciaKm)}`}
-                  </p>
+          {cards.map((c) => {
+            const avaliacao = avaliacaoPorProfissional.get(c.professionalId);
+            return (
+              <Link
+                key={c.key}
+                href={`/profissionais/${c.professionalId}`}
+                className="rounded-2xl border border-border bg-white p-5 transition-colors hover:border-primary"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <Avatar nome={c.nome} photoUrl={fotoUrlPorProfissional.get(c.professionalId)} size={48} />
+                    <div>
+                      <h2 className="font-display text-base font-semibold">{c.nome}</h2>
+                      <p className="text-sm text-foreground/60">
+                        {c.bairro.nome} — {c.bairro.cidade}/{c.bairro.estado}
+                        {c.distanciaKm != null && ` · ${faixaDistancia(c.distanciaKm)}`}
+                      </p>
+                      {avaliacao && avaliacao.total > 0 ? (
+                        <p className="mt-0.5 text-xs font-medium text-primary">
+                          {avaliacao.media!.toFixed(1)} ★ ({avaliacao.total}) · {avaliacao.atendimentos} atendimento
+                          {avaliacao.atendimentos === 1 ? "" : "s"}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-xs font-medium text-accent">✨ Novo no SaúdeAgora</p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary">
+                    {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
+                  </span>
                 </div>
-                <span className="rounded-full bg-primary-light px-3 py-1 text-xs font-semibold text-primary">
-                  {SERVICE_LABEL[c.servico.tipo] ?? c.servico.tipo}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-foreground/70">
-                R$ {c.servico.preco} · {c.servico.duracao_min} min
-              </p>
-            </Link>
-          ))}
+                <p className="mt-2 text-sm text-foreground/70">
+                  R$ {c.servico.preco} · {c.servico.duracao_min} min
+                </p>
+              </Link>
+            );
+          })}
         </div>
 
         <div className="h-[420px] overflow-hidden rounded-2xl border border-border lg:h-auto lg:min-h-[420px]">
