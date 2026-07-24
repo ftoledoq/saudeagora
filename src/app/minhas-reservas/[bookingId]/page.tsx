@@ -6,6 +6,7 @@ import { reportarProfissionalNaoCompareceu } from "../actions";
 import { AvaliarForm } from "../avaliar-form";
 import { ShareCardButton } from "@/components/share-card-button";
 import { Avatar } from "@/components/avatar";
+import { BotaoConversar } from "@/components/botao-conversar";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
@@ -123,15 +124,7 @@ export default async function DetalheReservaPage({
         </div>
 
         {STATUS_LIBERA_CHAT.includes(booking.status) && (
-          <a
-            href={`/chat/${booking.id}`}
-            className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-primary px-4 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary-light"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4h16v12H7l-3 3V4Z" />
-            </svg>
-            Conversar com {nomeProfissional}
-          </a>
+          <BotaoConversar bookingId={booking.id} nome={nomeProfissional} className="mt-5" />
         )}
 
         {reportavel && (

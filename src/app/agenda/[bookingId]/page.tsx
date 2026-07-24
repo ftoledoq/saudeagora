@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDataHora } from "@/lib/format";
 import { reportarClienteNaoCompareceu, responderAvaliacao } from "../actions";
 import { Avatar } from "@/components/avatar";
+import { BotaoConversar } from "@/components/botao-conversar";
 import { AvaliarClienteForm } from "../avaliar-cliente-form";
 import {
   SERVICE_LABEL,
@@ -73,20 +74,18 @@ export default async function DetalheAtendimentoPage({
 
   const reportavel = podeReportarNoShow(booking.data_hora, booking.status);
 
-  // Nota do cliente: mesma regra do que na lista (page.tsx) — nunca busca
-  // nem mostra pra um pedido ainda 'solicitado', mesmo acessando esta tela
-  // direto pela URL. Só depois de confirmado.
+  // Elegibilidade de avaliar o cliente: mesma regra da lista (page.tsx) —
+  // nunca busca nem mostra pra um pedido ainda 'solicitado', mesmo
+  // acessando esta tela direto pela URL. A média agregada do cliente NÃO
+  // aparece aqui — mora só no /perfil do próprio cliente.
   let avaliavelCliente = false;
-  let mediaCliente: { media: number | null; total: number } | null = null;
   if (booking.status !== "solicitado" && booking.cliente) {
-    const [{ data: jaAvaliado }, { data: media }] = await Promise.all([
-      supabase.from("client_reviews").select("id").eq("booking_id", booking.id).maybeSingle(),
-      supabase
-        .rpc("media_avaliacoes_cliente", { p_cliente_id: booking.cliente.id })
-        .maybeSingle<{ media: number | null; total: number }>(),
-    ]);
+    const { data: jaAvaliado } = await supabase
+      .from("client_reviews")
+      .select("id")
+      .eq("booking_id", booking.id)
+      .maybeSingle();
     avaliavelCliente = elegívelParaAvaliarCliente(booking.data_hora, booking.status, !!jaAvaliado);
-    mediaCliente = media;
   }
 
   return (
@@ -100,14 +99,7 @@ export default async function DetalheAtendimentoPage({
           <div className="flex items-center gap-3">
             <Avatar nome={booking.cliente?.nome ?? "?"} photoUrl={fotoUrl} size={56} />
             <div>
-              <p className="font-display text-lg font-semibold">
-                {booking.cliente?.nome}
-                {mediaCliente && mediaCliente.total > 0 && (
-                  <span className="ml-2 text-xs font-medium text-foreground/50">
-                    ★ {mediaCliente.media?.toFixed(1)} ({mediaCliente.total})
-                  </span>
-                )}
-              </p>
+              <p className="font-display text-lg font-semibold">{booking.cliente?.nome}</p>
               <p className="text-sm text-foreground/60">
                 {booking.service && (SERVICE_LABEL[booking.service.tipo] ?? booking.service.tipo)}
               </p>
@@ -142,15 +134,7 @@ export default async function DetalheAtendimentoPage({
         </div>
 
         {STATUS_LIBERA_CHAT.includes(booking.status) && (
-          <a
-            href={`/chat/${booking.id}`}
-            className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-primary px-4 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary-light"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4h16v12H7l-3 3V4Z" />
-            </svg>
-            Conversar com {booking.cliente?.nome}
-          </a>
+          <BotaoConversar bookingId={booking.id} nome={booking.cliente?.nome} className="mt-5" />
         )}
 
         {reportavel && (

@@ -164,45 +164,78 @@ export async function excluirPadraoRecorrente() {
   revalidatePath("/agenda");
 }
 
-// Bloqueia uma data específica mesmo dentro do padrão ("toda segunda,
-// exceto dia 28/07"). Apaga na hora qualquer horário 'livre' já gerado
-// pra essa data — nunca toca em 'bloqueado' (agendamento real já
-// confirmado nesse dia continua de pé, intacto; ver
-// bookings_block_availability na migration 0008). A exceção também
-// impede a geração automática de recriar horário nessa data no futuro
-// (ver recurring.ts).
-export async function adicionarExcecao(formData: FormData) {
+const LIMITE_DIAS_EXCECAO = 60;
+
+// Bloqueia um dia ou um período mesmo dentro do padrão ("toda segunda,
+// exceto 28/07" ou "de 10/08 a 20/08, estou de férias"). Data fim é
+// opcional — vazia significa bloqueio de um dia só. Apaga na hora
+// qualquer horário 'livre' já gerado dentro do período — nunca toca em
+// 'bloqueado' (agendamento real já confirmado continua de pé, intacto;
+// ver bookings_block_availability na migration 0008). A exceção também
+// impede a geração automática de recriar horário nessas datas no futuro
+// (ver recurring.ts). Retorna { error } em vez de lançar — mesmo motivo
+// de adicionarDisponibilidade: Next.js redacta mensagem de erro lançada
+// por Server Action em produção.
+export async function adicionarExcecao(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
 
-  const data = String(formData.get("data") ?? "");
-  if (!data) throw new Error("Escolha uma data.");
+  const dataInicio = String(formData.get("data_inicio") ?? "");
+  const dataFimInput = String(formData.get("data_fim") ?? "");
+  const dataFim = dataFimInput || dataInicio;
+
+  if (!dataInicio) return { error: "Escolha uma data." };
+  if (dataFim < dataInicio) return { error: "A data final não pode ser antes da inicial." };
+
+  const datas: string[] = [];
+  let cursor = new Date(`${dataInicio}T00:00:00Z`);
+  const fim = new Date(`${dataFim}T00:00:00Z`);
+  while (cursor.getTime() <= fim.getTime()) {
+    if (datas.length >= LIMITE_DIAS_EXCECAO) {
+      return { error: `Selecione um período de até ${LIMITE_DIAS_EXCECAO} dias.` };
+    }
+    datas.push(cursor.toISOString().slice(0, 10));
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+  }
 
   const { error } = await supabase
     .from("availability_exceptions")
-    .upsert({ professional_id: professionalId, data }, { onConflict: "professional_id,data" });
-  if (error) throw new Error(error.message);
+    .upsert(
+      datas.map((data) => ({ professional_id: professionalId, data })),
+      { onConflict: "professional_id,data", ignoreDuplicates: true }
+    );
+  if (error) return { error: error.message };
 
   await supabase
     .from("availability")
     .delete()
     .eq("professional_id", professionalId)
-    .eq("data", data)
-    .eq("status", "livre");
+    .eq("status", "livre")
+    .gte("data", dataInicio)
+    .lte("data", dataFim);
 
   revalidatePath("/agenda");
+  return { error: null };
 }
 
+// Remove um período inteiro de exceção de uma vez (a lista já agrupa
+// datas consecutivas em um único bloco visual — ver
+// agruparExcecoesConsecutivas em shared.ts — então "desbloquear" precisa
+// apagar o intervalo todo, não uma linha por vez).
 export async function removerExcecao(formData: FormData) {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
 
-  const id = String(formData.get("id") ?? "");
+  const dataInicio = String(formData.get("data_inicio") ?? "");
+  const dataFim = String(formData.get("data_fim") ?? "");
+  if (!dataInicio || !dataFim) throw new Error("Período inválido.");
+
   const { error } = await supabase
     .from("availability_exceptions")
     .delete()
-    .eq("id", id)
-    .eq("professional_id", professionalId);
+    .eq("professional_id", professionalId)
+    .gte("data", dataInicio)
+    .lte("data", dataFim);
   if (error) throw new Error(error.message);
 
   revalidatePath("/agenda");

@@ -3,36 +3,49 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-type BairroParaMatch = { id: string; nome: string; cidade: string };
+type BairroParaMatch = { id: string; nome: string; cidade: string; latitude: number; longitude: number };
 
-// Geolocalização + geocodificação reversa via Nominatim (OpenStreetMap,
-// gratuito, sem chave) — só dispara por clique explícito da pessoa, nunca
-// automaticamente. Nominatim pede no máximo 1 requisição/segundo por
-// cliente; como isso é sempre 1 requisição por clique (nunca um loop),
-// está naturalmente dentro do limite sem precisar de throttle adicional.
-//
-// A precisão é aproximada de propósito: casamos o bairro/cidade retornado
-// pelo Nominatim contra nossa tabela fixa de bairros (por nome, não por
-// coordenada exata) — mesma limitação já documentada no resto do app
-// (centro de bairro, não geocodificação por endereço exato).
+// Distância em linha reta — mesma função já usada em src/app/buscar/page.tsx
+// pra ordenar "Perto de você" (não dá pra importar de lá, é Server
+// Component; duplicar essa função pura de 10 linhas é mais simples que
+// criar um módulo compartilhado só pra isso).
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Antes disso, o bairro (e a cidade) eram decididos por geocodificação
+// reversa (Nominatim) + comparação de NOME de bairro/cidade contra a nossa
+// tabela fixa — bug real reportado: alguém fisicamente em São Paulo
+// continuava caindo no Rio de Janeiro, porque a lista fixa de bairros é
+// pequena (só ~11 por cidade) e o nome de bairro/cidade que o Nominatim
+// devolve raramente bate exatamente com um desses nomes; quando não bate
+// nada, a busca simplesmente não muda de cidade — sem erro visível o
+// bastante pra perceber. Agora usa só a COORDENADA (que a própria
+// geolocalização do navegador já dá, sem depender de nenhum nome de lugar):
+// pega o bairro fixo mais próximo em linha reta, de qualquer cidade —
+// mesma lógica de aproximação por centro de bairro já usada no resto do
+// app, sem o Nominatim entrar na decisão de todo.
 export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [estado, setEstado] = useState<"ocioso" | "buscando" | "erro">("ocioso");
   const [mensagemErro, setMensagemErro] = useState<string | null>(null);
 
-  function normalizar(texto: string): string {
-    return texto
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .trim();
-  }
-
-  async function usarLocalizacao() {
+  function usarLocalizacao() {
     if (!("geolocation" in navigator)) {
       setEstado("erro");
       setMensagemErro("Seu navegador não permite compartilhar localização.");
+      return;
+    }
+    if (bairros.length === 0) {
+      setEstado("erro");
+      setMensagemErro("Nenhuma região cadastrada ainda.");
       return;
     }
 
@@ -40,49 +53,24 @@ export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] 
     setMensagemErro(null);
 
     navigator.geolocation.getCurrentPosition(
-      async (posicao) => {
-        try {
-          const { latitude, longitude } = posicao.coords;
-          const resposta = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&addressdetails=1&accept-language=pt-BR`
-          );
-          if (!resposta.ok) throw new Error("geocodificação falhou");
-          const dados = await resposta.json();
-          const endereco = dados?.address ?? {};
+      (posicao) => {
+        const { latitude, longitude } = posicao.coords;
 
-          const candidatosCidade: string[] = [endereco.city, endereco.town, endereco.municipality].filter(
-            Boolean
-          );
-          const candidatosBairro: string[] = [endereco.suburb, endereco.neighbourhood, endereco.quarter].filter(
-            Boolean
-          );
-
-          const bairroEncontrado = bairros.find((b) =>
-            candidatosBairro.some((c) => normalizar(c) === normalizar(b.nome))
-          );
-          const cidadeEncontrada =
-            bairroEncontrado?.cidade ??
-            bairros.find((b) => candidatosCidade.some((c) => normalizar(c) === normalizar(b.cidade)))?.cidade;
-
-          if (!cidadeEncontrada) {
-            setEstado("erro");
-            setMensagemErro("Não encontramos sua região entre as cidades atendidas ainda.");
-            return;
+        let maisProximo = bairros[0];
+        let menorDistancia = haversineKm(latitude, longitude, maisProximo.latitude, maisProximo.longitude);
+        for (const b of bairros.slice(1)) {
+          const distancia = haversineKm(latitude, longitude, b.latitude, b.longitude);
+          if (distancia < menorDistancia) {
+            menorDistancia = distancia;
+            maisProximo = b;
           }
-
-          const params = new URLSearchParams(searchParams.toString());
-          params.set("cidade", cidadeEncontrada);
-          if (bairroEncontrado) {
-            params.set("bairro", bairroEncontrado.id);
-          } else {
-            params.delete("bairro");
-          }
-          router.push(`/buscar?${params.toString()}`);
-          setEstado("ocioso");
-        } catch {
-          setEstado("erro");
-          setMensagemErro("Não conseguimos identificar sua região agora — tente escolher manualmente.");
         }
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("cidade", maisProximo.cidade);
+        params.set("bairro", maisProximo.id);
+        router.push(`/buscar?${params.toString()}`);
+        setEstado("ocioso");
       },
       () => {
         setEstado("erro");

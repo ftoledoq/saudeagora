@@ -38,8 +38,8 @@ export default async function PerfilPage() {
   if (!user) redirect("/login?next=/perfil");
 
   const [{ data: professional }, { data: client }] = await Promise.all([
-    supabase.from("professionals").select("nome, foto_storage_key, ativo").eq("user_id", user.id).maybeSingle(),
-    supabase.from("clients").select("nome, ativo").eq("user_id", user.id).maybeSingle(),
+    supabase.from("professionals").select("id, nome, foto_storage_key, ativo").eq("user_id", user.id).maybeSingle(),
+    supabase.from("clients").select("id, nome, ativo").eq("user_id", user.id).maybeSingle(),
   ]);
 
   const nome = professional?.nome ?? client?.nome ?? user.email ?? "Você";
@@ -56,6 +56,27 @@ export default async function PerfilPage() {
     fotoUrl = data?.signedUrl ?? null;
   }
 
+  // Nota agregada, sempre sem comentário individual — mesma decisão de
+  // exibição de client_reviews (migration 0024): a nota só aparece no
+  // respectivo perfil de quem foi avaliado, nunca solta em outra tela.
+  // Mesmo tratamento visual do perfil público do profissional
+  // (src/app/profissionais/[id]/page.tsx): "Novo no SaúdeAgora" no lugar
+  // de nota vazia, badge de estrelas quando já tem alguma.
+  let mediaPropria: { media: number | null; total: number } | null = null;
+  if (professional) {
+    const { data: reviews } = await supabase.from("reviews").select("nota, booking:bookings!inner(professional_id)").eq("booking.professional_id", professional.id).returns<{ nota: number }[]>();
+    const total = reviews?.length ?? 0;
+    mediaPropria = {
+      total,
+      media: total > 0 ? reviews!.reduce((soma, r) => soma + r.nota, 0) / total : null,
+    };
+  } else if (client) {
+    const { data } = await supabase
+      .rpc("media_avaliacoes_cliente", { p_cliente_id: client.id })
+      .maybeSingle<{ media: number | null; total: number }>();
+    mediaPropria = data ?? { media: null, total: 0 };
+  }
+
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-md flex-col px-4 py-12 sm:px-6">
       <div className="flex items-center gap-4">
@@ -63,6 +84,19 @@ export default async function PerfilPage() {
         <div>
           <h1 className="font-display text-xl font-bold tracking-tight">{nome}</h1>
           <p className="text-sm text-foreground/60">{user.email}</p>
+          {mediaPropria && (
+            <div className="mt-1.5">
+              {mediaPropria.total > 0 ? (
+                <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
+                  {mediaPropria.media!.toFixed(1)} ★ ({mediaPropria.total})
+                </span>
+              ) : (
+                <span className="flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">
+                  ✨ Novo no SaúdeAgora
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -198,9 +198,7 @@ export default async function BuscarPage({
             {bairroSelecionado && ` — perto de ${bairroSelecionado.nome}`}
           </p>
         </div>
-        <UsarLocalizacaoButton
-          bairros={todosBairros.map((b) => ({ id: b.id, nome: b.nome, cidade: b.cidade }))}
-        />
+        <UsarLocalizacaoButton bairros={todosBairros} />
       </div>
 
       <form

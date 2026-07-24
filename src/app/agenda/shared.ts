@@ -117,3 +117,28 @@ export function textoPadraoRecorrente(
     })
     .join(" · ");
 }
+
+function diaSeguinte(dataIso: string): string {
+  const [ano, mes, dia] = dataIso.split("-").map(Number);
+  return new Date(Date.UTC(ano, mes - 1, dia + 1)).toISOString().slice(0, 10);
+}
+
+// Agrupa datas consecutivas de exceção num único intervalo pra exibição
+// ("28/07 – 30/07" em vez de três linhas) — a tabela continua guardando
+// uma linha por dia (schema mais simples, mesmo mecanismo de sempre pra
+// gerar/checar exceção), só a apresentação e a remoção em lote agrupam.
+export function agruparExcecoesConsecutivas(
+  excecoes: { id: string; data: string }[]
+): { inicio: string; fim: string }[] {
+  const ordenadas = [...excecoes].sort((a, b) => a.data.localeCompare(b.data));
+  const grupos: { inicio: string; fim: string }[] = [];
+  for (const exc of ordenadas) {
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && diaSeguinte(ultimo.fim) === exc.data) {
+      ultimo.fim = exc.data;
+    } else {
+      grupos.push({ inicio: exc.data, fim: exc.data });
+    }
+  }
+  return grupos;
+}

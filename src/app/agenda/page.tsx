@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { BotaoConversar } from "@/components/botao-conversar";
 import {
   removerDisponibilidade,
   salvarPadraoRecorrente,
   excluirPadraoRecorrente,
-  adicionarExcecao,
   removerExcecao,
   confirmarAgendamento,
   recusarAgendamento,
@@ -19,6 +18,7 @@ import { Avatar } from "@/components/avatar";
 import { TappableCard } from "@/components/tappable-card";
 import { AvaliarClienteForm } from "./avaliar-cliente-form";
 import { AdicionarDisponibilidadeForm } from "./adicionar-disponibilidade-form";
+import { BloquearExcecaoForm } from "./bloquear-excecao-form";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
@@ -28,6 +28,7 @@ import {
   DIA_SEMANA_ABREV,
   ORDEM_EXIBICAO_DIAS,
   textoPadraoRecorrente,
+  agruparExcecoesConsecutivas,
 } from "./shared";
 
 type ReviewRow = {
@@ -140,31 +141,17 @@ export default async function AgendaPage() {
       })
   );
 
-  // Nota do cliente: só busca a partir daqui (histórico), NUNCA pro bloco
-  // de pedidos pendentes acima — decisão explícita do founder de não
-  // deixar a média influenciar a decisão de confirmar/recusar um pedido
-  // novo. bookingsJaAvaliados sabe se cada atendimento já foi avaliado
-  // (pra esconder o formulário depois de enviar); mediaPorCliente é a
-  // média agregada, uma por cliente, mostrada só no histórico como contexto.
+  // bookingsJaAvaliados sabe se cada atendimento já foi avaliado (pra
+  // esconder o formulário de avaliação depois de enviar). A média
+  // agregada de nota do cliente NÃO é buscada nem mostrada aqui — mora
+  // só no /perfil do próprio cliente (ver decisão de exibição: "apenas
+  // nos respectivos perfis").
   const idsOutros = outros.map((b) => b.id);
   const { data: avaliacoesFeitas } =
     idsOutros.length > 0
       ? await supabase.from("client_reviews").select("booking_id").in("booking_id", idsOutros)
       : { data: [] as { booking_id: string }[] };
   const bookingsJaAvaliados = new Set((avaliacoesFeitas ?? []).map((a) => a.booking_id));
-
-  const idsClientesOutros = [
-    ...new Set(outros.map((b) => b.cliente?.id).filter((id): id is string => !!id)),
-  ];
-  const mediaPorCliente = new Map<string, { media: number | null; total: number }>();
-  await Promise.all(
-    idsClientesOutros.map(async (clienteId) => {
-      const { data } = await supabase
-        .rpc("media_avaliacoes_cliente", { p_cliente_id: clienteId })
-        .maybeSingle<{ media: number | null; total: number }>();
-      if (data) mediaPorCliente.set(clienteId, data);
-    })
-  );
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
@@ -241,7 +228,6 @@ export default async function AgendaPage() {
               const reportavel = podeReportarNoShow(b.data_hora, b.status);
               const jaAvaliouCliente = bookingsJaAvaliados.has(b.id);
               const avaliavelCliente = elegívelParaAvaliarCliente(b.data_hora, b.status, jaAvaliouCliente);
-              const mediaCliente = b.cliente ? mediaPorCliente.get(b.cliente.id) : undefined;
 
               return (
                 <TappableCard
@@ -252,15 +238,6 @@ export default async function AgendaPage() {
                   <div className="flex items-center justify-between">
                     <span>
                       {b.cliente?.nome} · {formatDataHora(b.data_hora)}
-                      {/* Só aparece aqui, no histórico — nunca no bloco de
-                          pedidos pendentes acima, de propósito (ver
-                          comentário na busca da média). Sempre agregada,
-                          nunca comentário individual. */}
-                      {mediaCliente && mediaCliente.total > 0 && (
-                        <span className="ml-2 text-xs font-medium text-foreground/50">
-                          ★ {mediaCliente.media?.toFixed(1)} ({mediaCliente.total})
-                        </span>
-                      )}
                     </span>
                     <span className="text-foreground/60">
                       {STATUS_LABEL[b.status] ?? b.status}
@@ -268,12 +245,7 @@ export default async function AgendaPage() {
                   </div>
 
                   {STATUS_LIBERA_CHAT.includes(b.status) && (
-                    <Link
-                      href={`/chat/${b.id}`}
-                      className="mt-2 inline-block text-xs font-medium text-primary hover:underline"
-                    >
-                      Conversar com {b.cliente?.nome}
-                    </Link>
+                    <BotaoConversar bookingId={b.id} nome={b.cliente?.nome} className="mt-2" />
                   )}
 
                   {reportavel && (
@@ -398,34 +370,26 @@ export default async function AgendaPage() {
         {padrao && padrao.length > 0 && (
           <div className="mt-6">
             <p className="text-sm font-medium text-foreground/80">
-              Bloquear um dia específico (exceção ao padrão)
+              Bloquear um dia ou período (exceção ao padrão)
             </p>
-            <form action={adicionarExcecao} className="mt-2 flex flex-wrap items-end gap-3">
-              <input
-                type="date"
-                name="data"
-                required
-                min={new Date().toISOString().slice(0, 10)}
-                className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-              />
-              <button
-                type="submit"
-                className="rounded-full border border-error px-4 py-2 text-sm font-semibold text-error transition-colors hover:bg-error-light"
-              >
-                Bloquear esse dia
-              </button>
-            </form>
+            <BloquearExcecaoForm />
 
             {excecoes && excecoes.length > 0 && (
               <div className="mt-3 flex flex-col gap-2">
-                {excecoes.map((exc) => (
+                {agruparExcecoesConsecutivas(excecoes).map((grupo) => (
                   <div
-                    key={exc.id}
+                    key={grupo.inicio}
                     className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm"
                   >
-                    <span>{formatData(exc.data)} · bloqueado</span>
+                    <span>
+                      {grupo.inicio === grupo.fim
+                        ? formatData(grupo.inicio)
+                        : `${formatData(grupo.inicio)} – ${formatData(grupo.fim)}`}{" "}
+                      · bloqueado
+                    </span>
                     <form action={removerExcecao}>
-                      <input type="hidden" name="id" value={exc.id} />
+                      <input type="hidden" name="data_inicio" value={grupo.inicio} />
+                      <input type="hidden" name="data_fim" value={grupo.fim} />
                       <button type="submit" className="text-xs font-medium text-primary hover:underline">
                         Desbloquear
                       </button>
