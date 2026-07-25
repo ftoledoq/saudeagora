@@ -204,13 +204,28 @@ export function GradeSemanal({
 
   // "Estou disponível o tempo todo" — pedido real depois de testar com
   // profissional que atende só pelo app: marcar célula por célula não é
-  // viável pra quem quer ficar livre em toda a faixa de horas exibida,
-  // todos os dias. Preenche só o que ainda está vazio (nunca sobrescreve
-  // reservado nem já marcado) na semana em vista.
+  // viável pra quem quer ficar livre em toda a faixa de horas exibida.
+  // Preenche só o que ainda está vazio (nunca sobrescreve reservado nem
+  // já marcado), sempre a partir de HOJE em diante — nunca um dia da
+  // semana atual que já passou.
+  //
+  // Bug real relatado: sem esse corte, um dia já passado na semana atual
+  // entrava na lista de "vazios" (nenhum horário tinha sido gerado pra
+  // ele, já que renovarHorizonteDisponibilidade nunca preenche o
+  // passado), a regra recorrente era criada mesmo assim, mas a célula
+  // continuava vazia — e ao tentar de novo, o mesmo dia+hora ainda
+  // aparecia "vazio" (só que agora JÁ tinha uma regra criada da
+  // tentativa anterior), disparando "já existe um padrão começando
+  // nesse horário". Cortar em hoje evita as duas coisas: dia de hoje em
+  // diante sempre gera a linha de verdade (renovarHorizonteDisponibilidade
+  // já cobre hoje), então uma segunda tentativa nunca vê como "vazio"
+  // algo que já foi preenchido.
   function confirmarBulk(repetir: boolean) {
     if (selecao.modo !== "bulk_confirmar") return;
     const { serviceId } = selecao;
     fechar();
+    const hojeIso = new Date().toISOString().slice(0, 10);
+    const diasAPartirDeHoje = diasIso.filter((data) => data >= hojeIso);
     startTransition(async () => {
       let primeiroErro: string | null = null;
 
@@ -218,7 +233,7 @@ export function GradeSemanal({
         await Promise.all(
           horas.map(async (h) => {
             const horaLabel = `${String(h).padStart(2, "0")}:00`;
-            const diasLivres = diasIso.filter((data) => {
+            const diasLivres = diasAPartirDeHoje.filter((data) => {
               const chave = chaveCelula(data, horaLabel);
               return !cobertasSet.has(chave) && !celulas[chave];
             });
@@ -235,7 +250,7 @@ export function GradeSemanal({
         const celulasVazias: { data: string; hora: string }[] = [];
         for (const h of horas) {
           const horaLabel = `${String(h).padStart(2, "0")}:00`;
-          for (const data of diasIso) {
+          for (const data of diasAPartirDeHoje) {
             const chave = chaveCelula(data, horaLabel);
             if (!cobertasSet.has(chave) && !celulas[chave]) {
               celulasVazias.push({ data, hora: horaLabel });
@@ -478,9 +493,10 @@ export function GradeSemanal({
       {selecao.modo === "bulk_confirmar" && (
         <PainelInferior titulo="Repetir toda semana, sempre?" onFechar={fechar}>
           <p className="text-sm text-foreground/70">
-            Preenche todo horário ainda livre nesta semana ({rotuloSemana}), de{" "}
-            {String(horaMin).padStart(2, "0")}:00 a {String(horaMax).padStart(2, "0")}:00 — sem
-            mexer no que já está marcado ou reservado.
+            Preenche todo horário ainda livre de hoje até o fim desta semana
+            ({rotuloSemana}), de {String(horaMin).padStart(2, "0")}:00 a{" "}
+            {String(horaMax).padStart(2, "0")}:00 — sem mexer no que já está
+            marcado, reservado, ou em dias que já passaram.
           </p>
           <div className="mt-4 flex gap-2">
             <button
