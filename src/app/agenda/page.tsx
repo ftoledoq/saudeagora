@@ -17,6 +17,7 @@ import { AvaliarClienteForm } from "./avaliar-cliente-form";
 import { BloquearExcecaoForm } from "./bloquear-excecao-form";
 import { GradeSemanal, type CelulaOcupada } from "./grade-semanal";
 import {
+  hojeIsoSP,
   segundaDaSemana,
   diasDaSemana,
   somarDias,
@@ -98,7 +99,7 @@ export default async function AgendaPage({
   // em recurring.ts sobre por que os dois pontos de entrada importam.
   await renovarHorizonteDisponibilidade(supabase, professional.id);
 
-  const hojeIso = new Date().toISOString().slice(0, 10);
+  const hojeIso = hojeIsoSP();
   const semanaAtualInicio = segundaDaSemana(hojeIso);
   // Nunca deixa navegar pra antes da semana atual — disponibilidade
   // passada não faz sentido editar, e evita o link "semana anterior"

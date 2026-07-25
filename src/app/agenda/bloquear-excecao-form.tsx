@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { adicionarExcecao } from "./actions";
+import { hojeIsoSP } from "./grade-helpers";
 
 type State = { error: string | null };
 const initialState: State = { error: null };
@@ -18,7 +19,7 @@ async function action(_prev: State, formData: FormData): Promise<State> {
 // vazio, bloqueia um dia só), não só uma data isolada.
 export function BloquearExcecaoForm() {
   const [state, formAction, pending] = useActionState(action, initialState);
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeIsoSP();
 
   return (
     <form action={formAction} className="mt-2 flex flex-wrap items-end gap-3">

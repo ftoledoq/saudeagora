@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { avisarPedidoConfirmado, avisarPedidoRecusado } from "@/lib/email";
 import { somarMinutos } from "./shared";
+import { hojeIsoSP } from "./grade-helpers";
 import { renovarHorizonteDisponibilidade } from "./recurring";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -222,7 +223,7 @@ export async function salvarPadraoRecorrente(formData: FormData): Promise<{ erro
   // deixa buraco vazio.
   if (regrasAntigas && regrasAntigas.length > 0) {
     const chavesAntigas = new Set(regrasAntigas.map((r) => `${r.dia_semana}|${r.hora_inicio}`));
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeIsoSP();
     const { data: futurosLivres } = await supabase
       .from("availability")
       .select("id, data, hora_inicio")

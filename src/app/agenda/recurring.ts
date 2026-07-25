@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hojeIsoSP } from "./grade-helpers";
 
 // Sem "use server" de propósito: não é uma Server Action (não é chamada
 // por um form do cliente), é uma função de servidor comum, chamada
@@ -54,7 +55,7 @@ export async function renovarHorizonteDisponibilidade(
     regrasPorDiaSemana.set(regra.dia_semana as number, lista);
   }
 
-  const hoje = new Date();
+  const [anoHoje, mesHoje, diaHoje] = hojeIsoSP().split("-").map(Number);
   const linhas: {
     professional_id: string;
     data: string;
@@ -63,7 +64,7 @@ export async function renovarHorizonteDisponibilidade(
     service_id: string;
   }[] = [];
   for (let i = 0; i < HORIZONTE_SEMANAS * 7; i++) {
-    const dia = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() + i));
+    const dia = new Date(Date.UTC(anoHoje, mesHoje - 1, diaHoje + i));
     const regras = regrasPorDiaSemana.get(dia.getUTCDay());
     if (!regras) continue;
     const dataIso = formatarDataISO(dia);

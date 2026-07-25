@@ -9,7 +9,14 @@ import {
   removerDisponibilidade,
   removerRegraRecorrente,
 } from "./actions";
-import { corServico, COR_RESERVADO, chaveCelula, diaSemanaDe, linhasQueOBlocoOcupa } from "./grade-helpers";
+import {
+  corServico,
+  COR_RESERVADO,
+  chaveCelula,
+  diaSemanaDe,
+  linhasQueOBlocoOcupa,
+  hojeIsoSP,
+} from "./grade-helpers";
 import { diaSemanaAbrev, diaDoMes } from "@/lib/format";
 
 const SERVICE_LABEL: Record<string, string> = {
@@ -285,7 +292,7 @@ export function GradeSemanal({
     if (selecao.modo !== "bulk_confirmar") return;
     const { serviceId } = selecao;
     fechar();
-    const hojeIso = new Date().toISOString().slice(0, 10);
+    const hojeIso = hojeIsoSP();
     const diasAPartirDeHoje = diasIso.filter((data) => data >= hojeIso);
     startTransition(async () => {
       let primeiroErro: string | null = null;
