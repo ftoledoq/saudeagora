@@ -139,6 +139,26 @@ export function GradeSemanal({
         fd.append("hora_inicio", hora);
         fd.append("service_id", serviceId);
         resultado = await salvarPadraoRecorrente(fd);
+
+        // A regra recorrente só gera horário a partir de HOJE em diante
+        // (renovarHorizonteDisponibilidade nunca preenche o passado) — se
+        // a célula tocada é um dia desta semana que já passou (ex: hoje é
+        // quinta, tocou numa segunda), a regra é criada certinho, mas a
+        // própria célula tocada ficava vazia, parecendo que nada
+        // aconteceu. Bug real relatado. Garante a célula tocada em si,
+        // direto, além da regra — "já existe" aqui não é erro de
+        // verdade (a regra recém-criada pode já ter gerado essa mesma
+        // linha se a data for hoje ou futura), só ignora esse caso.
+        if (!resultado.error) {
+          const fdCelula = new FormData();
+          fdCelula.append("data", data);
+          fdCelula.append("hora_inicio", hora);
+          fdCelula.append("service_id", serviceId);
+          const resultadoCelula = await adicionarDisponibilidade(fdCelula);
+          if (resultadoCelula.error && !resultadoCelula.error.includes("já tem um horário cadastrado")) {
+            resultado = resultadoCelula;
+          }
+        }
       } else {
         fd.append("data", data);
         fd.append("hora_inicio", hora);
