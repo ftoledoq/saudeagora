@@ -245,6 +245,7 @@ export function GradeSemanal({
         {hrefSemanaAnterior ? (
           <Link
             href={hrefSemanaAnterior}
+            scroll={false}
             aria-label="Semana anterior"
             className="rounded-full border border-border p-2 text-foreground/60 transition-colors hover:border-primary hover:text-primary"
           >
@@ -258,6 +259,7 @@ export function GradeSemanal({
         <p className="text-sm font-medium capitalize">{rotuloSemana}</p>
         <Link
           href={hrefSemanaProxima}
+          scroll={false}
           aria-label="Próxima semana"
           className="rounded-full border border-border p-2 text-foreground/60 transition-colors hover:border-primary hover:text-primary"
         >
