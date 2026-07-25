@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BotaoConversar } from "@/components/botao-conversar";
 import {
-  removerDisponibilidade,
   removerExcecao,
   confirmarAgendamento,
   recusarAgendamento,
@@ -11,13 +10,21 @@ import {
 } from "./actions";
 import { renovarHorizonteDisponibilidade } from "./recurring";
 import type { Availability } from "@/types/database";
-import { formatDataHora, formatData } from "@/lib/format";
+import { formatDataHora, formatData, componentesDataHoraSP } from "@/lib/format";
 import { Avatar } from "@/components/avatar";
 import { TappableCard } from "@/components/tappable-card";
 import { AvaliarClienteForm } from "./avaliar-cliente-form";
-import { AdicionarDisponibilidadeForm } from "./adicionar-disponibilidade-form";
 import { BloquearExcecaoForm } from "./bloquear-excecao-form";
-import { PadraoSemanalManager } from "./padrao-semanal-manager";
+import { GradeSemanal, type CelulaOcupada } from "./grade-semanal";
+import {
+  segundaDaSemana,
+  diasDaSemana,
+  somarDias,
+  calcularFaixaHoras,
+  linhasQueOBlocoOcupa,
+  chaveCelula,
+  rotuloSemana,
+} from "./grade-helpers";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
@@ -25,7 +32,6 @@ import {
   podeReportarNoShow,
   elegívelParaAvaliarCliente,
   agruparExcecoesConsecutivas,
-  agruparRegrasPorGrupo,
 } from "./shared";
 
 type ReviewRow = {
@@ -55,7 +61,12 @@ type BookingRow = {
   review: ReviewRow | null;
 };
 
-export default async function AgendaPage() {
+export default async function AgendaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ semana?: string }>;
+}) {
+  const { semana } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -80,51 +91,117 @@ export default async function AgendaPage() {
     );
   }
 
-  // Renova o horizonte ANTES de buscar os slots abaixo — sem isso, salvar
-  // um padrão novo (ou só voltar a abrir a Agenda depois de um tempo)
-  // não mostraria os horários recém-gerados até o próximo carregamento.
+  // Renova o horizonte ANTES de buscar os slots abaixo — sem isso, marcar
+  // um padrão novo (ou só voltar a abrir a Agenda depois de um tempo) não
+  // mostraria os horários recém-gerados até o próximo carregamento.
   // Também disparada no login (src/app/login/actions.ts) — ver comentário
   // em recurring.ts sobre por que os dois pontos de entrada importam.
   await renovarHorizonteDisponibilidade(supabase, professional.id);
 
-  const [{ data: slots }, { data: bookings }, { data: servicos }, { data: padrao }, { data: excecoes }] =
-    await Promise.all([
-      supabase
-        .from("availability")
-        .select("*")
-        .eq("professional_id", professional.id)
-        .gte("data", new Date().toISOString().slice(0, 10))
-        .order("data")
-        .order("hora_inicio")
-        .returns<Availability[]>(),
-      supabase
-        .from("bookings")
-        .select(
-          "id, data_hora, status, valor, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
-        )
-        .eq("professional_id", professional.id)
-        .order("data_hora", { ascending: true })
-        .returns<BookingRow[]>(),
-      // Todos os serviços do profissional, não mais .maybeSingle() num só
-      // — bug de arquitetura real corrigido (migration 0027): o modelo
-      // sempre suportou múltiplos serviços com durações diferentes.
-      supabase
-        .from("services")
-        .select("id, tipo, duracao_min")
-        .eq("professional_id", professional.id)
-        .order("created_at"),
-      supabase
-        .from("recurring_availability")
-        .select("grupo_id, dia_semana, hora_inicio, hora_fim, service_id")
-        .eq("professional_id", professional.id),
-      supabase
-        .from("availability_exceptions")
-        .select("id, data")
-        .eq("professional_id", professional.id)
-        .gte("data", new Date().toISOString().slice(0, 10))
-        .order("data"),
-    ]);
-  const gruposPadrao = agruparRegrasPorGrupo(padrao ?? []);
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const semanaAtualInicio = segundaDaSemana(hojeIso);
+  // Nunca deixa navegar pra antes da semana atual — disponibilidade
+  // passada não faz sentido editar, e evita o link "semana anterior"
+  // levar pra um estado sem ação nenhuma possível.
+  const semanaPedida =
+    semana && /^\d{4}-\d{2}-\d{2}$/.test(semana) ? segundaDaSemana(semana) : semanaAtualInicio;
+  const semanaInicio = semanaPedida < semanaAtualInicio ? semanaAtualInicio : semanaPedida;
+  const diasIso = diasDaSemana(semanaInicio);
+  const semanaFim = diasIso[6];
+
+  const [
+    { data: disponibilidadeSemana },
+    { data: horariosFuturos },
+    { data: bookings },
+    { data: servicos },
+    { data: padrao },
+    { data: excecoes },
+  ] = await Promise.all([
+    supabase
+      .from("availability")
+      .select("*")
+      .eq("professional_id", professional.id)
+      .gte("data", semanaInicio)
+      .lte("data", semanaFim)
+      .returns<Availability[]>(),
+    // Só hora_inicio, de todo o horizonte futuro (não só a semana em
+    // vista) — usado pra calcular a faixa de horas da grade (ver
+    // calcularFaixaHoras), que fica estável ao navegar entre semanas em
+    // vez de esticar/encolher a cada troca.
+    supabase
+      .from("availability")
+      .select("hora_inicio")
+      .eq("professional_id", professional.id)
+      .gte("data", hojeIso),
+    supabase
+      .from("bookings")
+      .select(
+        "id, data_hora, status, valor, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
+      )
+      .eq("professional_id", professional.id)
+      .order("data_hora", { ascending: true })
+      .returns<BookingRow[]>(),
+    // Todos os serviços do profissional, não mais .maybeSingle() num só
+    // — bug de arquitetura real corrigido (migration 0027): o modelo
+    // sempre suportou múltiplos serviços com durações diferentes.
+    supabase
+      .from("services")
+      .select("id, tipo, duracao_min")
+      .eq("professional_id", professional.id)
+      .order("created_at"),
+    supabase
+      .from("recurring_availability")
+      .select("hora_inicio")
+      .eq("professional_id", professional.id),
+    supabase
+      .from("availability_exceptions")
+      .select("id, data")
+      .eq("professional_id", professional.id)
+      .gte("data", hojeIso)
+      .order("data"),
+  ]);
+
+  const { horaMin, horaMax } = calcularFaixaHoras([
+    ...(padrao ?? []).map((p) => Number(p.hora_inicio.slice(0, 2))),
+    ...(horariosFuturos ?? []).map((h) => Number(h.hora_inicio.slice(0, 2))),
+  ]);
+
+  // Nome do cliente por horário reservado (só pro que aparece nesta
+  // semana) — mesmo fuso já tratado em componentesDataHoraSP, nunca ler
+  // o componente UTC cru do timestamptz.
+  const nomeClientePorChave = new Map<string, string>();
+  for (const b of bookings ?? []) {
+    const { data, hora } = componentesDataHoraSP(b.data_hora);
+    if (data >= semanaInicio && data <= semanaFim) {
+      nomeClientePorChave.set(chaveCelula(data, hora), b.cliente?.nome ?? "Cliente");
+    }
+  }
+
+  const celulas: Record<string, CelulaOcupada> = {};
+  const celulasCobertas: string[] = [];
+  for (const slot of disponibilidadeSemana ?? []) {
+    const horaInicio = slot.hora_inicio.slice(0, 5);
+    const horaFim = slot.hora_fim.slice(0, 5);
+    const chave = chaveCelula(slot.data, horaInicio);
+    celulas[chave] = {
+      id: slot.id,
+      serviceId: slot.service_id ?? "",
+      status: slot.status,
+      horaInicio,
+      horaFim,
+      clienteNome: slot.status === "bloqueado" ? nomeClientePorChave.get(chave) : undefined,
+    };
+    const linhas = linhasQueOBlocoOcupa(horaInicio, horaFim);
+    const horaInicioNum = Number(horaInicio.slice(0, 2));
+    for (let i = 1; i < linhas; i++) {
+      celulasCobertas.push(chaveCelula(slot.data, `${String(horaInicioNum + i).padStart(2, "0")}:00`));
+    }
+  }
+
+  const semanaAnteriorIso = somarDias(semanaInicio, -7);
+  const hrefSemanaAnterior =
+    semanaAnteriorIso >= semanaAtualInicio ? `/agenda?semana=${semanaAnteriorIso}` : null;
+  const hrefSemanaProxima = `/agenda?semana=${somarDias(semanaInicio, 7)}`;
 
   const pendentes = (bookings ?? []).filter((b) => b.status === "solicitado");
   const outros = (bookings ?? []).filter((b) => b.status !== "solicitado");
@@ -308,122 +385,54 @@ export default async function AgendaPage() {
       )}
 
       <div className="mt-10 border-t border-border pt-8">
-        <h2 className="font-display text-lg font-semibold">Padrão semanal</h2>
+        <h2 className="font-display text-lg font-semibold">Sua disponibilidade</h2>
         <p className="mt-1 text-sm text-foreground/60">
-          Defina os dias, horário e serviço em que você atende toda
-          semana — o sistema gera os horários automaticamente para as
-          próximas 8 semanas. Dá pra ter mais de um padrão ao mesmo tempo
-          (ex: manhã com um serviço, noite com outro).
+          Toque um horário livre pra marcar disponibilidade, ou num já
+          marcado pra desmarcar. Horários já reservados aparecem em cinza.
         </p>
 
         <div className="mt-4">
-          <PadraoSemanalManager
-            grupos={gruposPadrao}
+          <GradeSemanal
             servicos={(servicos ?? []).map((s) => ({ id: s.id, tipo: s.tipo, duracao_min: s.duracao_min }))}
+            diasIso={diasIso}
+            horaMin={horaMin}
+            horaMax={horaMax}
+            celulas={celulas}
+            celulasCobertas={celulasCobertas}
+            hrefSemanaAnterior={hrefSemanaAnterior}
+            hrefSemanaProxima={hrefSemanaProxima}
+            rotuloSemana={rotuloSemana(diasIso)}
           />
         </div>
 
-        {gruposPadrao.length > 0 && (
-          <div className="mt-6">
-            <p className="text-sm font-medium text-foreground/80">
-              Bloquear um dia ou período (exceção ao padrão)
-            </p>
-            <BloquearExcecaoForm />
+        <div className="mt-6">
+          <p className="text-sm font-medium text-foreground/80">Bloquear um período</p>
+          <BloquearExcecaoForm />
 
-            {excecoes && excecoes.length > 0 && (
-              <div className="mt-3 flex flex-col gap-2">
-                {agruparExcecoesConsecutivas(excecoes).map((grupo) => (
-                  <div
-                    key={grupo.inicio}
-                    className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm"
-                  >
-                    <span>
-                      {grupo.inicio === grupo.fim
-                        ? formatData(grupo.inicio)
-                        : `${formatData(grupo.inicio)} – ${formatData(grupo.fim)}`}{" "}
-                      · bloqueado
-                    </span>
-                    <form action={removerExcecao}>
-                      <input type="hidden" name="data_inicio" value={grupo.inicio} />
-                      <input type="hidden" name="data_fim" value={grupo.fim} />
-                      <button type="submit" className="text-xs font-medium text-primary hover:underline">
-                        Desbloquear
-                      </button>
-                    </form>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-10 border-t border-border pt-8">
-        <h2 className="font-display text-lg font-semibold">Horários avulsos</h2>
-        <p className="mt-1 text-sm text-foreground/60">
-          Horários gerados pelo seu padrão semanal aparecem aqui
-          automaticamente — adicione horários extras pontuais, ou remova
-          algum dia específico se precisar.
-        </p>
-
-        <AdicionarDisponibilidadeForm
-          servicos={(servicos ?? []).map((s) => ({ id: s.id, tipo: s.tipo, duracao_min: s.duracao_min }))}
-        />
-
-        <div className="mt-4 flex flex-col gap-2">
-          {(!slots || slots.length === 0) && (
-            <p className="text-sm text-foreground/60">
-              Nenhum horário cadastrado ainda.
-            </p>
-          )}
-          {slots?.map((s) => {
-            // Diferenciação visual entre horário gerado pelo padrão e
-            // avulso manual: não tem coluna de origem na tabela — inferido
-            // comparando dia da semana + hora de início contra as regras
-            // ativas do padrão (mesma checagem que removerDisponibilidade
-            // usa pra decidir se registra exceção ao remover).
-            const diaSemana = new Date(`${s.data}T00:00:00Z`).getUTCDay();
-            const doPadrao = (padrao ?? []).some(
-              (r) => r.dia_semana === diaSemana && r.hora_inicio === s.hora_inicio
-            );
-            return (
-              <div
-                key={s.id}
-                className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3"
-              >
-                <span className="text-sm">
-                  {formatData(s.data)} · {s.hora_inicio.slice(0, 5)}–{s.hora_fim.slice(0, 5)}
-                  {doPadrao && (
-                    <span className="ml-2 rounded-full bg-border px-2 py-0.5 text-[11px] font-medium text-foreground/60">
-                      Do padrão
-                    </span>
-                  )}
-                </span>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      s.status === "livre"
-                        ? "bg-primary-light text-primary"
-                        : "bg-border text-foreground/60"
-                    }`}
-                  >
-                    {s.status === "livre" ? "Livre" : "Reservado"}
+          {excecoes && excecoes.length > 0 && (
+            <div className="mt-3 flex flex-col gap-2">
+              {agruparExcecoesConsecutivas(excecoes).map((grupo) => (
+                <div
+                  key={grupo.inicio}
+                  className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm"
+                >
+                  <span>
+                    {grupo.inicio === grupo.fim
+                      ? formatData(grupo.inicio)
+                      : `${formatData(grupo.inicio)} – ${formatData(grupo.fim)}`}{" "}
+                    · bloqueado
                   </span>
-                  {s.status === "livre" && (
-                    <form action={removerDisponibilidade}>
-                      <input type="hidden" name="id" value={s.id} />
-                      <button
-                        type="submit"
-                        className="text-xs font-medium text-error hover:underline"
-                      >
-                        Remover
-                      </button>
-                    </form>
-                  )}
+                  <form action={removerExcecao}>
+                    <input type="hidden" name="data_inicio" value={grupo.inicio} />
+                    <input type="hidden" name="data_fim" value={grupo.fim} />
+                    <button type="submit" className="text-xs font-medium text-primary hover:underline">
+                      Desbloquear
+                    </button>
+                  </form>
                 </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

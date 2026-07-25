@@ -23,6 +23,21 @@ export function formatData(dataIso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+// Componentes de data+hora locais (America/Sao_Paulo) a partir de um
+// timestamptz — usado pra casar um booking (bookings.data_hora) contra uma
+// célula da grade semanal (agenda/grade-semanal.tsx), que é indexada por
+// "data|hora_inicio" nesse mesmo fuso. Nunca ler os componentes UTC crus
+// aqui — mesma classe de bug de fuso já corrigida em US-07/08.
+export function componentesDataHoraSP(iso: string): { data: string; hora: string } {
+  const partes = new Date(iso).toLocaleString("sv-SE", {
+    timeZone: "America/Sao_Paulo",
+  });
+  // toLocaleString("sv-SE") formata como "YYYY-MM-DD HH:MM:SS" — único
+  // locale embutido do JS que dá ISO-like sem depender de libs extras.
+  const [data, hora] = partes.split(" ");
+  return { data, hora: hora.slice(0, 5) };
+}
+
 const DIAS_SEMANA_ABREV = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
 // Dia da semana a partir de uma data PURA — mesmo cuidado de formatData:

@@ -26,13 +26,13 @@ async function getOwnProfessional(
 }
 
 // Retorna { error } em vez de lançar (diferente do resto deste arquivo):
-// é chamada a partir de AdicionarDisponibilidadeForm via useActionState,
-// e Next.js redacta a mensagem de qualquer erro lançado por uma Server
-// Action em produção (por segurança, só sobra um "digest" opaco) — mesmo
-// quando chamada indiretamente por outra função no mesmo arquivo "use
-// server". Só devolvendo o erro como valor normal é que a mensagem
-// amigável chega inteira até a tela. Descoberto ao testar ao vivo o
-// bloqueio por exceção (migration 0025): o insert era rejeitado
+// chamada diretamente (não via <form>) pela grade semanal
+// (grade-semanal.tsx), e Next.js redacta a mensagem de qualquer erro
+// lançado por uma Server Action em produção (por segurança, só sobra um
+// "digest" opaco) — mesmo quando chamada indiretamente por outra função
+// no mesmo arquivo "use server". Só devolvendo o erro como valor normal é
+// que a mensagem amigável chega inteira até a tela. Descoberto ao testar
+// ao vivo o bloqueio por exceção (migration 0025): o insert era rejeitado
 // corretamente, mas a tela quebrava pra uma página de erro genérica.
 export async function adicionarDisponibilidade(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
@@ -247,30 +247,6 @@ export async function salvarPadraoRecorrente(formData: FormData): Promise<{ erro
 
   revalidatePath("/agenda");
   return { error: null };
-}
-
-// Só para de gerar horários novos DESSE grupo — os que já foram gerados
-// (inclusive os das próximas semanas, se o horizonte já tinha sido
-// renovado) continuam existindo até serem removidos manualmente, um por
-// um, igual qualquer horário avulso. Decisão deliberada de não apagar em
-// cascata: menos surpresa (o profissional não perde horários que um
-// cliente já pode ter visto na busca sem aviso nenhum). Os outros grupos
-// do profissional não são afetados.
-export async function removerGrupoPadrao(formData: FormData) {
-  const supabase = await createClient();
-  const { id: professionalId } = await getOwnProfessional(supabase);
-
-  const grupoId = String(formData.get("grupo_id") ?? "");
-  if (!grupoId) throw new Error("Grupo inválido.");
-
-  const { error } = await supabase
-    .from("recurring_availability")
-    .delete()
-    .eq("professional_id", professionalId)
-    .eq("grupo_id", grupoId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/agenda");
 }
 
 const LIMITE_DIAS_EXCECAO = 60;
