@@ -7,9 +7,9 @@ import { createClient } from "@/lib/supabase/server";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; senha_redefinida?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, senha_redefinida } = await searchParams;
   const nextParam = next ?? "/";
 
   // Rede de segurança: nunca mostrar o formulário de login pra quem já tem
@@ -41,6 +41,12 @@ export default async function LoginPage({
           Acesso para clientes, profissionais e equipe interna.
         </p>
       </div>
+
+      {senha_redefinida === "1" && (
+        <div className="mt-6 rounded-lg border border-primary bg-primary-light px-4 py-3 text-center text-sm text-primary">
+          Senha redefinida com sucesso — entre com a senha nova.
+        </div>
+      )}
 
       <div className="mt-8 rounded-2xl border border-border bg-white p-6">
         <LoginForm next={nextParam} />
