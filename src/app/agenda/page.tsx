@@ -414,7 +414,7 @@ export default async function AgendaPage({
               {agruparExcecoesConsecutivas(excecoes).map((grupo) => (
                 <div
                   key={grupo.inicio}
-                  className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-3 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-border bg-white px-4 py-3 text-sm"
                 >
                   <span>
                     {grupo.inicio === grupo.fim
