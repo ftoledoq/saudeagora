@@ -243,8 +243,11 @@ export async function salvarPadraoRecorrente(formData: FormData): Promise<{ erro
 
   // Gera os horários avulsos das próximas semanas na hora — sem isso, o
   // profissional salvaria o padrão e não veria nenhum horário novo até o
-  // próximo login.
-  await renovarHorizonteDisponibilidade(supabase, professionalId);
+  // próximo login. Erro daqui agora chega até a tela (ver comentário em
+  // recurring.ts) — antes sumia em silêncio, e o padrão ficava "criado"
+  // sem nenhum horário gerado pra ele, sem nenhum aviso.
+  const { error: erroHorizonte } = await renovarHorizonteDisponibilidade(supabase, professionalId);
+  if (erroHorizonte) return { error: erroHorizonte };
 
   revalidatePath("/agenda");
   return { error: null };

@@ -344,11 +344,22 @@ export function GradeSemanal({
 
   return (
     <div>
+      {/* prefetch={false} nos dois links de navegação de semana — bug
+          real de causa raiz encontrado em auditoria: o Link pré-busca e
+          cacheia a semana seguinte assim que a seta aparece na tela
+          (antes de qualquer toque), automaticamente. Marcar disponibilidade
+          e depois navegar pra lá podia servir esse cache pré-mutação em
+          vez de buscar de novo — os dados eram gravados certinho no
+          banco (confirmado: tentativas repetidas passaram a esbarrar em
+          "já existe um padrão", prova de que a regra tinha sido criada
+          da vez anterior), só a tela nunca refletia. Sem prefetch, cada
+          clique nas setas sempre busca fresco. */}
       <div className="flex items-center justify-between gap-3">
         {hrefSemanaAnterior ? (
           <Link
             href={hrefSemanaAnterior}
             scroll={false}
+            prefetch={false}
             aria-label="Semana anterior"
             className="rounded-full border border-border p-2 text-foreground/60 transition-colors hover:border-primary hover:text-primary"
           >
@@ -363,6 +374,7 @@ export function GradeSemanal({
         <Link
           href={hrefSemanaProxima}
           scroll={false}
+          prefetch={false}
           aria-label="Próxima semana"
           className="rounded-full border border-border p-2 text-foreground/60 transition-colors hover:border-primary hover:text-primary"
         >

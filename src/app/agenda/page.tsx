@@ -97,7 +97,11 @@ export default async function AgendaPage({
   // mostraria os horários recém-gerados até o próximo carregamento.
   // Também disparada no login (src/app/login/actions.ts) — ver comentário
   // em recurring.ts sobre por que os dois pontos de entrada importam.
-  await renovarHorizonteDisponibilidade(supabase, professional.id);
+  // Erro aqui não trava a página (é manutenção de fundo, não uma ação que
+  // o profissional acabou de pedir) — mas registra no log do servidor em
+  // vez de sumir em silêncio, mesmo motivo do comentário em recurring.ts.
+  const { error: erroRenovacao } = await renovarHorizonteDisponibilidade(supabase, professional.id);
+  if (erroRenovacao) console.error("Falha ao renovar horizonte de disponibilidade:", erroRenovacao);
 
   const hojeIso = hojeIsoSP();
   const semanaAtualInicio = segundaDaSemana(hojeIso);

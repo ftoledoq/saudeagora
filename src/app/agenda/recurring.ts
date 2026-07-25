@@ -29,15 +29,22 @@ function formatarDataISO(d: Date): string {
 // causa de um agendamento real. O unique index (professional_id, data,
 // hora_inicio) + upsert com ignoreDuplicates garante isso — a linha
 // 'bloqueado' de um booking existente nunca é tocada.
+//
+// Retorna { error } (nunca lançava antes) — auditoria encontrou o
+// upsert final sem NENHUMA checagem do resultado: se falhasse por
+// qualquer motivo, a função simplesmente retornava like se tivesse dado
+// certo, e quem chamou (salvarPadraoRecorrente) já tinha decidido
+// "sucesso" antes disso. Uma falha aqui nunca chegaria à tela de jeito
+// nenhum. Agora o chamador decide o que fazer com o erro.
 export async function renovarHorizonteDisponibilidade(
   supabase: SupabaseClient,
   professionalId: string
-): Promise<void> {
+): Promise<{ error: string | null }> {
   const { data: padrao } = await supabase
     .from("recurring_availability")
     .select("dia_semana, hora_inicio, hora_fim, service_id")
     .eq("professional_id", professionalId);
-  if (!padrao || padrao.length === 0) return;
+  if (!padrao || padrao.length === 0) return { error: null };
 
   const { data: excecoes } = await supabase
     .from("availability_exceptions")
@@ -79,9 +86,10 @@ export async function renovarHorizonteDisponibilidade(
       });
     }
   }
-  if (linhas.length === 0) return;
+  if (linhas.length === 0) return { error: null };
 
-  await supabase
+  const { error } = await supabase
     .from("availability")
     .upsert(linhas, { onConflict: "professional_id,data,hora_inicio", ignoreDuplicates: true });
+  return { error: error?.message ?? null };
 }
