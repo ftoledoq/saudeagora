@@ -28,29 +28,23 @@ export function diaSemanaDe(dataIso: string): number {
 
 const HORA_MIN_ABSOLUTA = 6;
 const HORA_MAX_ABSOLUTA = 22;
-const HORA_MIN_PADRAO = 8;
-const HORA_MAX_PADRAO = 20;
 
-// Faixa de horas da grade: do horário mínimo ao máximo já configurado
-// pelo profissional (com uma linha de respiro em cada ponta, pra dar
-// espaço de tocar um horário um pouco antes/depois do que já existe),
-// SEMPRE limitada a [6h, 22h] — protege contra um horário digitado
-// errado (ex: 23:47 por engano) esticar a grade inteira pra um
-// intervalo absurdo, mesmo espírito do "Fim calculado automaticamente"
-// já corrigido antes nesta funcionalidade. Sem nenhum horário
-// configurado ainda, cai num intervalo padrão razoável (8h–20h).
-export function calcularFaixaHoras(horasInicioConfiguradas: number[]): {
+// Faixa de horas da grade: SEMPRE a faixa de sensatez inteira (6h–22h),
+// nunca encolhida pro que já está configurado. Decisão revertida depois
+// de uso real: encolher pro mínimo/máximo já marcado criava um paradoxo
+// de gestão — um profissional sem nenhum horário ainda (conta nova, ou
+// recém-limpa) via uma grade estreita (8h–20h) e não conseguia sequer
+// tocar fora dela pra criar o PRIMEIRO horário mais cedo ou mais tarde,
+// já que a faixa só se ajusta a partir de dado que ele não conseguia
+// criar. A grade precisa estar sempre disponível pra gestão completa,
+// não amarrada ao que já existe. Os únicos limites que sobram são os de
+// sensatez absolutos, pra nunca esticar além de um dia de trabalho
+// plausível.
+export function calcularFaixaHoras(): {
   horaMin: number;
   horaMax: number;
 } {
-  if (horasInicioConfiguradas.length === 0) {
-    return { horaMin: HORA_MIN_PADRAO, horaMax: HORA_MAX_PADRAO };
-  }
-  const menor = Math.min(...horasInicioConfiguradas);
-  const maior = Math.max(...horasInicioConfiguradas);
-  const horaMin = Math.max(HORA_MIN_ABSOLUTA, menor - 1);
-  const horaMax = Math.min(HORA_MAX_ABSOLUTA, maior + 1);
-  return { horaMin, horaMax: Math.max(horaMax, horaMin + 1) };
+  return { horaMin: HORA_MIN_ABSOLUTA, horaMax: HORA_MAX_ABSOLUTA };
 }
 
 // Quantas linhas de hora um bloco ocupa visualmente, a partir da hora de

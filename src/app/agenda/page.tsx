@@ -111,10 +111,8 @@ export default async function AgendaPage({
 
   const [
     { data: disponibilidadeSemana },
-    { data: horariosFuturos },
     { data: bookings },
     { data: servicos },
-    { data: padrao },
     { data: excecoes },
   ] = await Promise.all([
     supabase
@@ -124,15 +122,6 @@ export default async function AgendaPage({
       .gte("data", semanaInicio)
       .lte("data", semanaFim)
       .returns<Availability[]>(),
-    // Só hora_inicio, de todo o horizonte futuro (não só a semana em
-    // vista) — usado pra calcular a faixa de horas da grade (ver
-    // calcularFaixaHoras), que fica estável ao navegar entre semanas em
-    // vez de esticar/encolher a cada troca.
-    supabase
-      .from("availability")
-      .select("hora_inicio")
-      .eq("professional_id", professional.id)
-      .gte("data", hojeIso),
     supabase
       .from("bookings")
       .select(
@@ -150,10 +139,6 @@ export default async function AgendaPage({
       .eq("professional_id", professional.id)
       .order("created_at"),
     supabase
-      .from("recurring_availability")
-      .select("hora_inicio")
-      .eq("professional_id", professional.id),
-    supabase
       .from("availability_exceptions")
       .select("id, data")
       .eq("professional_id", professional.id)
@@ -161,10 +146,7 @@ export default async function AgendaPage({
       .order("data"),
   ]);
 
-  const { horaMin, horaMax } = calcularFaixaHoras([
-    ...(padrao ?? []).map((p) => Number(p.hora_inicio.slice(0, 2))),
-    ...(horariosFuturos ?? []).map((h) => Number(h.hora_inicio.slice(0, 2))),
-  ]);
+  const { horaMin, horaMax } = calcularFaixaHoras();
 
   // Nome do cliente por horário reservado (só pro que aparece nesta
   // semana) — mesmo fuso já tratado em componentesDataHoraSP, nunca ler
