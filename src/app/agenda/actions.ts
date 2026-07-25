@@ -40,19 +40,24 @@ export async function adicionarDisponibilidade(formData: FormData): Promise<{ er
 
   const data = String(formData.get("data") ?? "");
   const horaInicio = String(formData.get("hora_inicio") ?? "");
+  const serviceId = String(formData.get("service_id") ?? "");
 
   if (!data || !horaInicio) return { error: "Preencha data e horário." };
+  if (!serviceId) return { error: "Escolha o serviço desse horário." };
 
   // "Fim" nunca vem do formulário (era o bug: início e fim caindo no mesmo
   // valor padrão do seletor de hora nativo, gerando horário de duração
-  // zero) — é sempre calculado a partir da duração do serviço já cadastrado,
-  // nunca digitado à mão.
+  // zero) — é sempre calculado a partir da duração do SERVIÇO ESCOLHIDO,
+  // nunca de um valor único do profissional (bug de arquitetura real: o
+  // modelo sempre suportou múltiplos serviços com durações diferentes,
+  // mas a geração de horário usava só "o" serviço do profissional).
   const { data: service } = await supabase
     .from("services")
     .select("duracao_min")
+    .eq("id", serviceId)
     .eq("professional_id", professionalId)
     .maybeSingle();
-  if (!service) return { error: "Cadastre seu serviço antes de adicionar disponibilidade." };
+  if (!service) return { error: "Serviço inválido." };
 
   const horaFim = somarMinutos(horaInicio, service.duracao_min);
 
@@ -61,6 +66,7 @@ export async function adicionarDisponibilidade(formData: FormData): Promise<{ er
     data,
     hora_inicio: horaInicio,
     hora_fim: horaFim,
+    service_id: serviceId,
   });
   if (error) {
     if (error.message.includes("availability_professional_id_data_hora_inicio_key")) {
@@ -134,33 +140,60 @@ export async function removerDisponibilidade(formData: FormData) {
   revalidatePath("/agenda");
 }
 
-// Salvar um padrão SEMPRE substitui o padrão inteiro anterior (apaga todas
-// as regras antigas do profissional e insere as novas) — não existe edição
-// por dia nesta fase. Simples de entender ("o que está salvo agora é a
-// verdade"), e evita a ambiguidade de "o que acontece com os horários já
-// gerados quando eu mudo o horário do padrão": a resposta é sempre "os já
-// gerados ficam como estão, só a geração futura muda" (ver
-// excluirPadraoRecorrente abaixo, mesmo raciocínio).
-export async function salvarPadraoRecorrente(formData: FormData) {
+// Cada padrão salvo é um GRUPO (grupo_id) — um conjunto de dias + um
+// horário + um serviço, independente dos outros grupos do profissional.
+// Antes disso, salvar sempre apagava TODAS as regras do profissional
+// (só dava pra ter um padrão de cada vez) — lacuna real de produto,
+// corrigida aqui. Sem grupo_id no form = cria um grupo novo; com
+// grupo_id = edita o grupo existente (apaga só as linhas desse grupo,
+// insere as novas no lugar, mesmo grupo_id preservado). Retorna
+// { error } em vez de lançar — mesmo motivo de adicionarDisponibilidade.
+export async function salvarPadraoRecorrente(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
 
   const dias = formData.getAll("dias").map(Number).filter((d) => d >= 0 && d <= 6);
   const horaInicio = String(formData.get("hora_inicio") ?? "");
+  const serviceId = String(formData.get("service_id") ?? "");
+  const grupoIdExistente = String(formData.get("grupo_id") ?? "") || null;
 
-  if (dias.length === 0) throw new Error("Selecione ao menos um dia da semana.");
-  if (!horaInicio) throw new Error("Preencha o horário de início.");
+  if (dias.length === 0) return { error: "Selecione ao menos um dia da semana." };
+  if (!horaInicio) return { error: "Preencha o horário de início." };
+  if (!serviceId) return { error: "Escolha o serviço desse padrão." };
 
   const { data: service } = await supabase
     .from("services")
     .select("duracao_min")
+    .eq("id", serviceId)
     .eq("professional_id", professionalId)
     .maybeSingle();
-  if (!service) throw new Error("Cadastre seu serviço antes de definir um padrão.");
+  if (!service) return { error: "Serviço inválido." };
 
   const horaFim = somarMinutos(horaInicio, service.duracao_min);
+  const grupoId = grupoIdExistente ?? crypto.randomUUID();
 
-  await supabase.from("recurring_availability").delete().eq("professional_id", professionalId);
+  // Regras antigas do grupo (antes de apagar) — precisamos delas depois
+  // pra limpar os horários 'livre' que essas regras tinham gerado. Editar
+  // um padrão (ex: mudar 18:00 pra 19:00) apagava só a REGRA antiga, não
+  // os horários já gerados a partir dela — eles ficavam órfãos na lista
+  // de avulsos (sem o rótulo "Do padrão", já que nenhuma regra ativa mais
+  // casa com eles), em vez de sumir junto com a edição. Bug real, achado
+  // testando o cenário de editar um padrão de ponta a ponta.
+  const { data: regrasAntigas } = grupoIdExistente
+    ? await supabase
+        .from("recurring_availability")
+        .select("dia_semana, hora_inicio")
+        .eq("professional_id", professionalId)
+        .eq("grupo_id", grupoIdExistente)
+    : { data: null };
+
+  if (grupoIdExistente) {
+    await supabase
+      .from("recurring_availability")
+      .delete()
+      .eq("professional_id", professionalId)
+      .eq("grupo_id", grupoIdExistente);
+  }
 
   const { error } = await supabase.from("recurring_availability").insert(
     dias.map((dia_semana) => ({
@@ -168,9 +201,44 @@ export async function salvarPadraoRecorrente(formData: FormData) {
       dia_semana,
       hora_inicio: horaInicio,
       hora_fim: horaFim,
+      service_id: serviceId,
+      grupo_id: grupoId,
     }))
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.message.includes("recurring_availability_prof_dia_hora_key")) {
+      return {
+        error: "Já existe um padrão começando nesse horário em algum dos dias selecionados — escolha outro horário ou edite o padrão existente.",
+      };
+    }
+    return { error: error.message };
+  }
+
+  // Limpa os horários 'livre' órfãos das regras antigas (ver comentário
+  // acima) — nunca toca em 'reservado' (agendamento real fica de pé,
+  // mesma decisão de removerGrupoPadrao). Se a regra nova ainda cobrir o
+  // mesmo dia+hora, renovarHorizonteDisponibilidade logo abaixo recria a
+  // linha na hora — como é upsert com ignoreDuplicates, não duplica nem
+  // deixa buraco vazio.
+  if (regrasAntigas && regrasAntigas.length > 0) {
+    const chavesAntigas = new Set(regrasAntigas.map((r) => `${r.dia_semana}|${r.hora_inicio}`));
+    const hoje = new Date().toISOString().slice(0, 10);
+    const { data: futurosLivres } = await supabase
+      .from("availability")
+      .select("id, data, hora_inicio")
+      .eq("professional_id", professionalId)
+      .eq("status", "livre")
+      .gte("data", hoje);
+    const idsParaRemover = (futurosLivres ?? [])
+      .filter((s) => {
+        const diaSemana = new Date(`${s.data}T00:00:00Z`).getUTCDay();
+        return chavesAntigas.has(`${diaSemana}|${s.hora_inicio}`);
+      })
+      .map((s) => s.id);
+    if (idsParaRemover.length > 0) {
+      await supabase.from("availability").delete().in("id", idsParaRemover);
+    }
+  }
 
   // Gera os horários avulsos das próximas semanas na hora — sem isso, o
   // profissional salvaria o padrão e não veria nenhum horário novo até o
@@ -178,22 +246,28 @@ export async function salvarPadraoRecorrente(formData: FormData) {
   await renovarHorizonteDisponibilidade(supabase, professionalId);
 
   revalidatePath("/agenda");
+  return { error: null };
 }
 
-// Só para de gerar horários novos — os que já foram gerados (inclusive os
-// das próximas semanas, se o horizonte já tinha sido renovado) continuam
-// existindo até serem removidos manualmente, um por um, igual qualquer
-// horário avulso. Decisão deliberada de não apagar em cascata: menos
-// surpresa (o profissional não perde horários que um cliente já pode ter
-// visto na busca sem aviso nenhum).
-export async function excluirPadraoRecorrente() {
+// Só para de gerar horários novos DESSE grupo — os que já foram gerados
+// (inclusive os das próximas semanas, se o horizonte já tinha sido
+// renovado) continuam existindo até serem removidos manualmente, um por
+// um, igual qualquer horário avulso. Decisão deliberada de não apagar em
+// cascata: menos surpresa (o profissional não perde horários que um
+// cliente já pode ter visto na busca sem aviso nenhum). Os outros grupos
+// do profissional não são afetados.
+export async function removerGrupoPadrao(formData: FormData) {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
+
+  const grupoId = String(formData.get("grupo_id") ?? "");
+  if (!grupoId) throw new Error("Grupo inválido.");
 
   const { error } = await supabase
     .from("recurring_availability")
     .delete()
-    .eq("professional_id", professionalId);
+    .eq("professional_id", professionalId)
+    .eq("grupo_id", grupoId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/agenda");

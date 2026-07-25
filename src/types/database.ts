@@ -96,6 +96,7 @@ export interface Availability {
   hora_inicio: string;
   hora_fim: string;
   status: "livre" | "bloqueado";
+  service_id: string | null;
 }
 
 export interface Booking {

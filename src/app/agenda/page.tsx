@@ -3,8 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { BotaoConversar } from "@/components/botao-conversar";
 import {
   removerDisponibilidade,
-  salvarPadraoRecorrente,
-  excluirPadraoRecorrente,
   removerExcecao,
   confirmarAgendamento,
   recusarAgendamento,
@@ -19,17 +17,15 @@ import { TappableCard } from "@/components/tappable-card";
 import { AvaliarClienteForm } from "./avaliar-cliente-form";
 import { AdicionarDisponibilidadeForm } from "./adicionar-disponibilidade-form";
 import { BloquearExcecaoForm } from "./bloquear-excecao-form";
-import { SeletorDiasSemana } from "./seletor-dias-semana";
+import { PadraoSemanalManager } from "./padrao-semanal-manager";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
   STATUS_LIBERA_CHAT,
   podeReportarNoShow,
   elegívelParaAvaliarCliente,
-  DIA_SEMANA_ABREV,
-  ORDEM_EXIBICAO_DIAS,
-  textoPadraoRecorrente,
   agruparExcecoesConsecutivas,
+  agruparRegrasPorGrupo,
 } from "./shared";
 
 type ReviewRow = {
@@ -91,7 +87,7 @@ export default async function AgendaPage() {
   // em recurring.ts sobre por que os dois pontos de entrada importam.
   await renovarHorizonteDisponibilidade(supabase, professional.id);
 
-  const [{ data: slots }, { data: bookings }, { data: service }, { data: padrao }, { data: excecoes }] =
+  const [{ data: slots }, { data: bookings }, { data: servicos }, { data: padrao }, { data: excecoes }] =
     await Promise.all([
       supabase
         .from("availability")
@@ -109,10 +105,17 @@ export default async function AgendaPage() {
         .eq("professional_id", professional.id)
         .order("data_hora", { ascending: true })
         .returns<BookingRow[]>(),
-      supabase.from("services").select("duracao_min").eq("professional_id", professional.id).maybeSingle(),
+      // Todos os serviços do profissional, não mais .maybeSingle() num só
+      // — bug de arquitetura real corrigido (migration 0027): o modelo
+      // sempre suportou múltiplos serviços com durações diferentes.
+      supabase
+        .from("services")
+        .select("id, tipo, duracao_min")
+        .eq("professional_id", professional.id)
+        .order("created_at"),
       supabase
         .from("recurring_availability")
-        .select("id, dia_semana, hora_inicio, hora_fim")
+        .select("grupo_id, dia_semana, hora_inicio, hora_fim, service_id")
         .eq("professional_id", professional.id),
       supabase
         .from("availability_exceptions")
@@ -121,7 +124,7 @@ export default async function AgendaPage() {
         .gte("data", new Date().toISOString().slice(0, 10))
         .order("data"),
     ]);
-  const duracaoServicoMin = service?.duracao_min ?? 60;
+  const gruposPadrao = agruparRegrasPorGrupo(padrao ?? []);
 
   const pendentes = (bookings ?? []).filter((b) => b.status === "solicitado");
   const outros = (bookings ?? []).filter((b) => b.status !== "solicitado");
@@ -307,59 +310,20 @@ export default async function AgendaPage() {
       <div className="mt-10 border-t border-border pt-8">
         <h2 className="font-display text-lg font-semibold">Padrão semanal</h2>
         <p className="mt-1 text-sm text-foreground/60">
-          Defina os dias e o horário em que você atende toda semana — o
-          sistema gera os horários automaticamente para as próximas 8
-          semanas. Salvar um novo padrão substitui o anterior por inteiro.
+          Defina os dias, horário e serviço em que você atende toda
+          semana — o sistema gera os horários automaticamente para as
+          próximas 8 semanas. Dá pra ter mais de um padrão ao mesmo tempo
+          (ex: manhã com um serviço, noite com outro).
         </p>
 
-        <form
-          action={salvarPadraoRecorrente}
-          className="mt-4 flex flex-col gap-4 rounded-2xl border border-border bg-white p-6"
-        >
-          <div>
-            <p className="text-sm font-medium text-foreground/80">Dias da semana</p>
-            <SeletorDiasSemana ordemExibicao={ORDEM_EXIBICAO_DIAS} abreviacoes={DIA_SEMANA_ABREV} />
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="padrao_hora_inicio" className="text-sm font-medium text-foreground/80">
-                Início
-              </label>
-              <input
-                id="padrao_hora_inicio"
-                name="hora_inicio"
-                type="time"
-                required
-                placeholder="08:00"
-                className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
-              />
-            </div>
-            <p className="pb-2.5 text-sm text-foreground/60">
-              Duração: {duracaoServicoMin} min (definida no seu cadastro)
-            </p>
-            <button
-              type="submit"
-              className="rounded-full bg-accent px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
-            >
-              Salvar padrão
-            </button>
-          </div>
-        </form>
+        <div className="mt-4">
+          <PadraoSemanalManager
+            grupos={gruposPadrao}
+            servicos={(servicos ?? []).map((s) => ({ id: s.id, tipo: s.tipo, duracao_min: s.duracao_min }))}
+          />
+        </div>
 
-        {padrao && padrao.length > 0 ? (
-          <div className="mt-3 flex items-center justify-between rounded-xl border border-primary bg-primary-light px-4 py-3 text-sm">
-            <span className="font-medium text-primary">{textoPadraoRecorrente(padrao)}</span>
-            <form action={excluirPadraoRecorrente}>
-              <button type="submit" className="text-xs font-medium text-error hover:underline">
-                Encerrar padrão
-              </button>
-            </form>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-foreground/60">Nenhum padrão semanal ativo.</p>
-        )}
-
-        {padrao && padrao.length > 0 && (
+        {gruposPadrao.length > 0 && (
           <div className="mt-6">
             <p className="text-sm font-medium text-foreground/80">
               Bloquear um dia ou período (exceção ao padrão)
@@ -402,7 +366,9 @@ export default async function AgendaPage() {
           algum dia específico se precisar.
         </p>
 
-        <AdicionarDisponibilidadeForm duracaoServicoMin={duracaoServicoMin} />
+        <AdicionarDisponibilidadeForm
+          servicos={(servicos ?? []).map((s) => ({ id: s.id, tipo: s.tipo, duracao_min: s.duracao_min }))}
+        />
 
         <div className="mt-4 flex flex-col gap-2">
           {(!slots || slots.length === 0) && (

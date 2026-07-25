@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { criarAgendamento, type AgendarFormState } from "./actions";
 import { formatData, formatDataHora, diaDoMes, diaSemanaAbrev } from "@/lib/format";
 import type { Availability, Bairro } from "@/types/database";
@@ -20,33 +20,56 @@ const labelClass = "text-sm font-medium text-foreground/80";
 
 type EnderecoAnterior = { rua: string; bairroId: string; referencia: string | null };
 
+type Servico = { id: string; tipo: string; preco: number; duracao_min: number };
+
 export function AgendarForm({
   professionalId,
   professionalNome,
-  servico,
+  servicos,
   slots,
   bairros,
   enderecosAnteriores,
 }: {
   professionalId: string;
   professionalNome: string;
-  servico: { id: string; tipo: string; preco: number; duracao_min: number };
+  servicos: Servico[];
   slots: Availability[];
   bairros: Bairro[];
   enderecosAnteriores: EnderecoAnterior[];
 }) {
   const [state, formAction, pending] = useActionState(criarAgendamento, initialState);
 
+  // Profissional pode ter mais de um serviço agora (migration 0027) —
+  // cada horário pertence a um serviço específico, então escolher o
+  // serviço primeiro filtra quais horários fazem sentido mostrar. Com um
+  // só, fica automático e sem seletor visível (mesmo padrão já usado na
+  // Agenda do profissional pro caso comum).
+  const [servicoId, setServicoId] = useState<string>(servicos[0]?.id ?? "");
+  const servico = servicos.find((s) => s.id === servicoId) ?? servicos[0];
+  const slotsDoServico = useMemo(
+    () => slots.filter((s) => !s.service_id || s.service_id === servicoId),
+    [slots, servicoId]
+  );
+
   // Faixa de dias primeiro, horário depois — mesmo padrão de app de
   // atendimento sob demanda (US-05 UX, item pedido depois de 1/2
   // confirmados). Datas únicas, na ordem em que já vêm do servidor
   // (por `data` crescente).
-  const datasUnicas = useMemo(() => [...new Set(slots.map((s) => s.data))], [slots]);
+  const datasUnicas = useMemo(() => [...new Set(slotsDoServico.map((s) => s.data))], [slotsDoServico]);
   const [dataEscolhida, setDataEscolhida] = useState<string>(datasUnicas[0] ?? "");
-  const slotsDoDia = slots.filter((s) => s.data === dataEscolhida);
+  const slotsDoDia = slotsDoServico.filter((s) => s.data === dataEscolhida);
 
   const [slotId, setSlotId] = useState<string>("");
-  const slotEscolhido = slots.find((s) => s.id === slotId);
+  const slotEscolhido = slotsDoServico.find((s) => s.id === slotId);
+
+  // Trocar de serviço muda o conjunto de horários válidos — sem isso, a
+  // data/horário escolhidos podiam ficar "presos" num serviço que não é
+  // mais o selecionado.
+  useEffect(() => {
+    setDataEscolhida(datasUnicas[0] ?? "");
+    setSlotId("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servicoId]);
 
   const [rua, setRua] = useState("");
   const [bairroId, setBairroId] = useState("");
@@ -83,10 +106,10 @@ export function AgendarForm({
   return (
     <form action={formAction} className="flex flex-col gap-8">
       <input type="hidden" name="professional_id" value={professionalId} />
-      <input type="hidden" name="service_id" value={servico.id} />
+      <input type="hidden" name="service_id" value={servico?.id ?? ""} />
       <input type="hidden" name="availability_id" value={slotId} />
       <input type="hidden" name="data_hora" value={dataHoraIso} />
-      <input type="hidden" name="valor" value={servico.preco} />
+      <input type="hidden" name="valor" value={servico?.preco ?? 0} />
 
       {state.error && (
         <div className="rounded-lg border border-error bg-error-light px-4 py-3 text-sm text-error">
@@ -94,9 +117,31 @@ export function AgendarForm({
         </div>
       )}
 
+      {servicos.length > 1 && (
+        <section className="rounded-2xl border border-border bg-white p-6">
+          <h2 className="font-display text-lg font-semibold">Escolha o serviço</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {servicos.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setServicoId(s.id)}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                  s.id === servicoId
+                    ? "border-primary bg-primary text-white"
+                    : "border-border bg-white text-foreground hover:border-primary"
+                }`}
+              >
+                {SERVICE_LABEL[s.tipo] ?? s.tipo} · R$ {s.preco}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="rounded-2xl border border-border bg-white p-6">
         <h2 className="font-display text-lg font-semibold">Escolha um horário</h2>
-        {slots.length === 0 ? (
+        {slotsDoServico.length === 0 ? (
           <p className="mt-2 text-sm text-foreground/60">
             Nenhum horário livre no momento — volte mais tarde.
           </p>
@@ -234,7 +279,7 @@ export function AgendarForm({
           </div>
           <div className="flex justify-between">
             <dt className="text-foreground/70">Serviço</dt>
-            <dd className="font-medium">{SERVICE_LABEL[servico.tipo] ?? servico.tipo}</dd>
+            <dd className="font-medium">{servico ? SERVICE_LABEL[servico.tipo] ?? servico.tipo : "—"}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-foreground/70">Data/hora</dt>
@@ -246,7 +291,7 @@ export function AgendarForm({
           </div>
           <div className="flex justify-between">
             <dt className="text-foreground/70">Valor</dt>
-            <dd className="font-display font-semibold text-primary">R$ {servico.preco}</dd>
+            <dd className="font-display font-semibold text-primary">R$ {servico?.preco ?? 0}</dd>
           </div>
         </dl>
         {avisoCancelamento && (

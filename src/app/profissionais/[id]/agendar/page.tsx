@@ -65,8 +65,7 @@ export default async function AgendarPage({
         .limit(10),
     ]);
 
-  const servico = servicos?.[0];
-  if (!servico) notFound();
+  if (!servicos || servicos.length === 0) notFound();
 
   // Dedup por rua+bairro (mesmo endereço usado de novo não vira dois
   // atalhos) — mantém só a ocorrência mais recente de cada combinação,
@@ -98,7 +97,7 @@ export default async function AgendarPage({
         <AgendarForm
           professionalId={professional.id}
           professionalNome={professional.nome}
-          servico={servico}
+          servicos={servicos}
           slots={slots ?? []}
           bairros={bairros ?? []}
           enderecosAnteriores={enderecosAnteriores}

@@ -34,7 +34,7 @@ export async function renovarHorizonteDisponibilidade(
 ): Promise<void> {
   const { data: padrao } = await supabase
     .from("recurring_availability")
-    .select("dia_semana, hora_inicio, hora_fim")
+    .select("dia_semana, hora_inicio, hora_fim, service_id")
     .eq("professional_id", professionalId);
   if (!padrao || padrao.length === 0) return;
 
@@ -44,22 +44,39 @@ export async function renovarHorizonteDisponibilidade(
     .eq("professional_id", professionalId);
   const datasBloqueadas = new Set((excecoes ?? []).map((e) => e.data as string));
 
-  const porDiaSemana = new Map(padrao.map((p) => [p.dia_semana as number, p]));
+  // Mais de uma regra pode valer pro mesmo dia da semana agora (ex: manhã
+  // com um serviço, noite com outro) — por isso uma lista de regras por
+  // dia, não mais uma regra única.
+  const regrasPorDiaSemana = new Map<number, typeof padrao>();
+  for (const regra of padrao) {
+    const lista = regrasPorDiaSemana.get(regra.dia_semana as number) ?? [];
+    lista.push(regra);
+    regrasPorDiaSemana.set(regra.dia_semana as number, lista);
+  }
 
   const hoje = new Date();
-  const linhas: { professional_id: string; data: string; hora_inicio: string; hora_fim: string }[] = [];
+  const linhas: {
+    professional_id: string;
+    data: string;
+    hora_inicio: string;
+    hora_fim: string;
+    service_id: string;
+  }[] = [];
   for (let i = 0; i < HORIZONTE_SEMANAS * 7; i++) {
     const dia = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() + i));
-    const regra = porDiaSemana.get(dia.getUTCDay());
-    if (!regra) continue;
+    const regras = regrasPorDiaSemana.get(dia.getUTCDay());
+    if (!regras) continue;
     const dataIso = formatarDataISO(dia);
     if (datasBloqueadas.has(dataIso)) continue;
-    linhas.push({
-      professional_id: professionalId,
-      data: dataIso,
-      hora_inicio: regra.hora_inicio as string,
-      hora_fim: regra.hora_fim as string,
-    });
+    for (const regra of regras) {
+      linhas.push({
+        professional_id: professionalId,
+        data: dataIso,
+        hora_inicio: regra.hora_inicio as string,
+        hora_fim: regra.hora_fim as string,
+        service_id: regra.service_id as string,
+      });
+    }
   }
   if (linhas.length === 0) return;
 

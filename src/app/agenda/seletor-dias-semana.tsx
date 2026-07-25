@@ -13,11 +13,16 @@ import { useState } from "react";
 export function SeletorDiasSemana({
   ordemExibicao,
   abreviacoes,
+  diasIniciais,
 }: {
   ordemExibicao: number[];
   abreviacoes: Record<number, string>;
+  // Pra edição de um grupo existente — o componente pai deve remontar
+  // este componente com uma `key` diferente ao trocar de grupo (ver
+  // PadraoSemanalManager), já que o estado inicial só é lido uma vez.
+  diasIniciais?: number[];
 }) {
-  const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
+  const [selecionados, setSelecionados] = useState<Set<number>>(new Set(diasIniciais ?? []));
 
   function alternar(dia: number) {
     setSelecionados((atual) => {

@@ -2,6 +2,9 @@
 
 import { useActionState } from "react";
 import { adicionarDisponibilidade } from "./actions";
+import { SERVICE_LABEL } from "./shared";
+
+type Servico = { id: string; tipo: string; duracao_min: number };
 
 type State = { error: string | null };
 const initialState: State = { error: null };
@@ -16,7 +19,7 @@ async function action(_prev: State, formData: FormData): Promise<State> {
 // genérica do Next.js (bug real encontrado ao testar a exceção de
 // disponibilidade recorrente: o insert era corretamente bloqueado pelo
 // trigger do banco, mas a experiência virava um crash de página cheia).
-export function AdicionarDisponibilidadeForm({ duracaoServicoMin }: { duracaoServicoMin: number }) {
+export function AdicionarDisponibilidadeForm({ servicos }: { servicos: Servico[] }) {
   const [state, formAction, pending] = useActionState(action, initialState);
 
   return (
@@ -54,13 +57,38 @@ export function AdicionarDisponibilidadeForm({ duracaoServicoMin }: { duracaoSer
         />
       </div>
       {/* "Fim" não é mais digitado — calculado no servidor a partir da
-          duração do serviço (evita o bug de início/fim caindo no mesmo
-          valor padrão do seletor nativo e gerando horário de duração
-          zero). Só mostra pra que o profissional saiba o que está
-          reservando. */}
-      <p className="pb-2.5 text-sm text-foreground/60">
-        Duração: {duracaoServicoMin} min (definida no seu cadastro)
-      </p>
+          duração do SERVIÇO ESCOLHIDO (nunca de um valor único do
+          profissional — bug de arquitetura real: o modelo sempre suportou
+          múltiplos serviços com durações diferentes). Seletor só aparece
+          quando há mais de um serviço — com um só, a escolha é automática
+          e sem campo visível, sem burocracia extra pro caso comum. */}
+      {servicos.length > 1 ? (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="avulso_service_id" className="text-sm font-medium text-foreground/80">
+            Serviço
+          </label>
+          <select
+            id="avulso_service_id"
+            name="service_id"
+            required
+            defaultValue={servicos[0]?.id}
+            className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+          >
+            {servicos.map((s) => (
+              <option key={s.id} value={s.id}>
+                {SERVICE_LABEL[s.tipo] ?? s.tipo} ({s.duracao_min} min)
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name="service_id" value={servicos[0]?.id ?? ""} />
+          <p className="pb-2.5 text-sm text-foreground/60">
+            Duração: {servicos[0]?.duracao_min ?? 0} min (definida no seu cadastro)
+          </p>
+        </>
+      )}
       <button
         type="submit"
         disabled={pending}

@@ -5,8 +5,15 @@ import { Avatar } from "@/components/avatar";
 import { PerfilIcons } from "@/components/perfil-icons";
 import { ConfirmarAcaoButton } from "@/components/confirmar-acao-button";
 import { sair, desativarConta, reativarConta, excluirContaPermanentemente } from "./actions";
+import { AdicionarServicoForm } from "./adicionar-servico-form";
 
 const AJUDA_EMAIL = "saudeagora@zohomail.com";
+
+const SERVICE_LABEL: Record<string, string> = {
+  personal_trainer: "Personal Trainer",
+  massagem: "Massagem",
+  pilates: "Pilates",
+};
 
 function ItemMenu({
   href,
@@ -77,6 +84,16 @@ export default async function PerfilPage() {
     mediaPropria = data ?? { media: null, total: 0 };
   }
 
+  let servicos: { id: string; tipo: string; preco: number; duracao_min: number }[] = [];
+  if (professional) {
+    const { data } = await supabase
+      .from("services")
+      .select("id, tipo, preco, duracao_min")
+      .eq("professional_id", professional.id)
+      .order("created_at");
+    servicos = data ?? [];
+  }
+
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-md flex-col px-4 py-12 sm:px-6">
       <div className="flex items-center gap-4">
@@ -139,6 +156,31 @@ export default async function PerfilPage() {
               <span className="flex-1">Baixar meus dados</span>
               <span className="text-foreground/40">›</span>
             </a>
+          </div>
+        </>
+      )}
+
+      {professional && contaAtiva && (
+        <>
+          <h2 className="mt-6 px-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">
+            Serviços
+          </h2>
+          <div className="mt-2 rounded-2xl border border-border bg-white p-4">
+            {servicos.length === 0 ? (
+              <p className="text-sm text-foreground/60">Nenhum serviço cadastrado.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {servicos.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{SERVICE_LABEL[s.tipo] ?? s.tipo}</span>
+                    <span className="text-foreground/60">
+                      R$ {s.preco} · {s.duracao_min} min
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <AdicionarServicoForm />
           </div>
         </>
       )}
