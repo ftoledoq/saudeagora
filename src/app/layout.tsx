@@ -6,6 +6,7 @@ import { TabBarClient } from "@/components/tab-bar-client";
 import { SplashScreen } from "@/components/splash-screen";
 import { createClient } from "@/lib/supabase/server";
 import { resolverPapel } from "@/lib/role";
+import { souAdmin } from "@/lib/admin";
 import "./globals.css";
 
 const sora = Sora({
@@ -62,7 +63,19 @@ export default async function RootLayout({
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const papel = await resolverPapel(supabase, session?.user ?? null);
+  const user = session?.user ?? null;
+  const autenticado = !!user;
+  // Resolvidos em paralelo, mesmo raciocínio de perf do comentário acima
+  // (getSession local, sem round-trip) — admin não é um papel (papel é só
+  // profissional/cliente), é permissão à parte ligada à tabela `admins`
+  // (ver lib/admin.ts). Uma conta pode ser puramente admin, sem nenhuma
+  // das duas outras linhas — era exatamente essa combinação que a tab bar
+  // tratava como "não reconhecido = deslogado" (Agenda/Perfil mandando
+  // pra /login mesmo com sessão ativa), bug real relatado ao vivo.
+  const [papel, isAdmin] = await Promise.all([
+    resolverPapel(supabase, user),
+    souAdmin(supabase, user),
+  ]);
 
   return (
     <html
@@ -71,10 +84,10 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         <SplashScreen />
-        <SiteHeader papel={papel} />
+        <SiteHeader autenticado={autenticado} />
         <main className="flex-1 pb-16">{children}</main>
         <SiteFooter />
-        <TabBarClient papel={papel} />
+        <TabBarClient papel={papel} autenticado={autenticado} isAdmin={isAdmin} />
       </body>
     </html>
   );

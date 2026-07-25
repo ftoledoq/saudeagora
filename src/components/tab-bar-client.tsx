@@ -7,7 +7,7 @@ import type { Papel } from "@/lib/role";
 type TabItem = {
   href: string;
   label: string;
-  icon: "buscar" | "agenda" | "perfil";
+  icon: "buscar" | "agenda" | "perfil" | "aprovacoes";
 };
 
 const ICONS: Record<TabItem["icon"], React.ReactNode> = {
@@ -31,32 +31,71 @@ const ICONS: Record<TabItem["icon"], React.ReactNode> = {
       <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
     </svg>
   ),
+  aprovacoes: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+  ),
 };
 
-// `papel` chega pronto via prop, resolvido no servidor pelo layout raiz
-// (src/app/layout.tsx, via src/lib/role.ts) antes de qualquer HTML sair —
-// não existe mais nenhuma consulta assíncrona a professionals/clients
-// aqui, nem estado de "ainda resolvendo". Servidor e cliente sempre
-// renderizam o mesmo href na primeira vez, então não há mais janela onde
-// um usuário já autenticado toca um item e cai em /login por engano —
-// causa raiz do bug de redirecionamento indevido relatado numa
+// `papel`, `autenticado` e `isAdmin` chegam prontos via prop, resolvidos no
+// servidor pelo layout raiz (src/app/layout.tsx, via src/lib/role.ts e
+// src/lib/admin.ts) antes de qualquer HTML sair — não existe nenhuma
+// consulta assíncrona aqui, nem estado de "ainda resolvendo". Servidor e
+// cliente sempre renderizam o mesmo href na primeira vez, então não há
+// janela onde um usuário já autenticado toca um item e cai em /login por
+// engano — causa raiz do bug de redirecionamento indevido relatado numa
 // apresentação real.
-export function TabBarClient({ papel }: { papel: Papel }) {
+//
+// `papel` só cobre profissional/cliente (mutuamente exclusivos, ligados a
+// uma linha em professionals/clients) — admin é uma permissão à parte
+// (tabela `admins`), e uma conta pode ser puramente admin, sem nenhuma das
+// duas outras linhas. Tratar "sem papel" como sinônimo de "deslogado" foi
+// exatamente o bug relatado: Agenda/Perfil mandavam essa conta pra
+// /login mesmo com sessão ativa (que por sua vez redireciona autenticado
+// de volta pra "/", dando a impressão de clique não funcionando). Corrigido
+// distinguindo os três estados que importam pra cada item: qual destino
+// faz sentido pro papel, se a conta é admin, e se existe sessão de todo.
+export function TabBarClient({
+  papel,
+  autenticado,
+  isAdmin,
+}: {
+  papel: Papel;
+  autenticado: boolean;
+  isAdmin: boolean;
+}) {
   const pathname = usePathname();
 
-  const agendaHref =
-    papel === "profissional"
-      ? "/agenda"
-      : papel === "cliente"
-        ? "/minhas-reservas"
-        : "/login?next=/agenda";
-  const perfilHref = papel ? "/perfil" : "/login?next=/perfil";
+  const items: TabItem[] = [{ href: "/buscar", label: "Buscar", icon: "buscar" }];
 
-  const items: TabItem[] = [
-    { href: "/buscar", label: "Buscar", icon: "buscar" },
-    { href: agendaHref, label: "Agenda", icon: "agenda" },
-    { href: perfilHref, label: "Perfil", icon: "perfil" },
-  ];
+  // "Agenda" só existe de verdade pra profissional (própria agenda) e
+  // cliente (reservas) — pra admin puro, vira "Aprovações" (ponto de
+  // entrada pedido explicitamente, pra não precisar digitar
+  // /admin/aprovacoes de cabeça toda vez). Pra sessão autenticada sem
+  // nenhum desses três papéis (não deveria existir no fluxo normal, mas o
+  // orfanato de sessão é tratado com grace em /perfil) não há destino
+  // sensato — o item some, em vez de cair em /login incorretamente.
+  if (papel === "profissional") {
+    items.push({ href: "/agenda", label: "Agenda", icon: "agenda" });
+  } else if (papel === "cliente") {
+    items.push({ href: "/minhas-reservas", label: "Agenda", icon: "agenda" });
+  } else if (isAdmin) {
+    items.push({ href: "/admin/aprovacoes", label: "Aprovações", icon: "aprovacoes" });
+  } else if (!autenticado) {
+    items.push({ href: "/login?next=/agenda", label: "Agenda", icon: "agenda" });
+  }
+
+  // "Perfil" é destino válido pra QUALQUER sessão autenticada, papel ou
+  // não (a própria página já trata sessão órfã com grace, mostrando
+  // e-mail no lugar do nome) — só quem não tem sessão nenhuma precisa
+  // passar por /login primeiro.
+  items.push({
+    href: autenticado ? "/perfil" : "/login?next=/perfil",
+    label: "Perfil",
+    icon: "perfil",
+  });
 
   return (
     // Fundo sólido opaco, não translúcido+blur: backdrop-filter em elemento
