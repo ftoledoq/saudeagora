@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { adicionarDisponibilidade, salvarPadraoRecorrente, removerDisponibilidade } from "./actions";
 import { corServico, chaveCelula, diaSemanaDe, linhasQueOBlocoOcupa } from "./grade-helpers";
 import { diaSemanaAbrev, diaDoMes } from "@/lib/format";
@@ -27,7 +28,9 @@ type Selecao =
   | { modo: "idle" }
   | { modo: "escolher_servico"; data: string; hora: string }
   | { modo: "confirmar_repeticao"; data: string; hora: string; serviceId: string }
-  | { modo: "ver_reservado"; celula: CelulaOcupada; data: string };
+  | { modo: "ver_reservado"; celula: CelulaOcupada; data: string }
+  | { modo: "bulk_escolher_servico" }
+  | { modo: "bulk_confirmar"; serviceId: string };
 
 // Painel simples que sobe do rodapé — mesmo padrão visual já usado no
 // bottom sheet de pin do mapa em /buscar (visao-busca.tsx): fundo branco,
@@ -90,6 +93,7 @@ export function GradeSemanal({
   hrefSemanaProxima: string;
   rotuloSemana: string;
 }) {
+  const router = useRouter();
   const [selecao, setSelecao] = useState<Selecao>({ modo: "idle" });
   const [erro, setErro] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -102,6 +106,13 @@ export function GradeSemanal({
     setSelecao({ modo: "idle" });
   }
 
+  // Server Action chamada direto (fora de um <form>) ainda dispara a
+  // revalidação de cache que ela mesma pede via revalidatePath, mas o
+  // router do navegador só busca o RSC atualizado se alguém pedir —
+  // sem isso, a tela ficava "sem responder": o toque processava
+  // certinho no servidor, só a tela nunca refletia. Bug real relatado
+  // (toque parecia travar/não marcar nada), corrigido chamando
+  // router.refresh() explicitamente depois de toda mutação.
   function tocarCelulaVazia(data: string, hora: string) {
     setErro(null);
     if (servicos.length > 1) {
@@ -135,6 +146,7 @@ export function GradeSemanal({
         resultado = await adicionarDisponibilidade(fd);
       }
       if (resultado.error) setErro(resultado.error);
+      router.refresh();
     });
   }
 
@@ -149,11 +161,82 @@ export function GradeSemanal({
       const fd = new FormData();
       fd.append("id", celula.id);
       await removerDisponibilidade(fd);
+      router.refresh();
     });
   }
 
   function tocarCelulaReservada(celula: CelulaOcupada, data: string) {
     setSelecao({ modo: "ver_reservado", celula, data });
+  }
+
+  function abrirMarcarTudo() {
+    setErro(null);
+    if (servicos.length > 1) {
+      setSelecao({ modo: "bulk_escolher_servico" });
+    } else {
+      setSelecao({ modo: "bulk_confirmar", serviceId: servicos[0].id });
+    }
+  }
+
+  function escolherServicoBulk(serviceId: string) {
+    setSelecao({ modo: "bulk_confirmar", serviceId });
+  }
+
+  // "Estou disponível o tempo todo" — pedido real depois de testar com
+  // profissional que atende só pelo app: marcar célula por célula não é
+  // viável pra quem quer ficar livre em toda a faixa de horas exibida,
+  // todos os dias. Preenche só o que ainda está vazio (nunca sobrescreve
+  // reservado nem já marcado) na semana em vista.
+  function confirmarBulk(repetir: boolean) {
+    if (selecao.modo !== "bulk_confirmar") return;
+    const { serviceId } = selecao;
+    fechar();
+    startTransition(async () => {
+      let primeiroErro: string | null = null;
+
+      if (repetir) {
+        await Promise.all(
+          horas.map(async (h) => {
+            const horaLabel = `${String(h).padStart(2, "0")}:00`;
+            const diasLivres = diasIso.filter((data) => {
+              const chave = chaveCelula(data, horaLabel);
+              return !cobertasSet.has(chave) && !celulas[chave];
+            });
+            if (diasLivres.length === 0) return;
+            const fd = new FormData();
+            diasLivres.forEach((data) => fd.append("dias", String(diaSemanaDe(data))));
+            fd.append("hora_inicio", horaLabel);
+            fd.append("service_id", serviceId);
+            const resultado = await salvarPadraoRecorrente(fd);
+            if (resultado.error && !primeiroErro) primeiroErro = resultado.error;
+          })
+        );
+      } else {
+        const celulasVazias: { data: string; hora: string }[] = [];
+        for (const h of horas) {
+          const horaLabel = `${String(h).padStart(2, "0")}:00`;
+          for (const data of diasIso) {
+            const chave = chaveCelula(data, horaLabel);
+            if (!cobertasSet.has(chave) && !celulas[chave]) {
+              celulasVazias.push({ data, hora: horaLabel });
+            }
+          }
+        }
+        await Promise.all(
+          celulasVazias.map(async ({ data, hora }) => {
+            const fd = new FormData();
+            fd.append("data", data);
+            fd.append("hora_inicio", hora);
+            fd.append("service_id", serviceId);
+            const resultado = await adicionarDisponibilidade(fd);
+            if (resultado.error && !primeiroErro) primeiroErro = resultado.error;
+          })
+        );
+      }
+
+      if (primeiroErro) setErro(primeiroErro);
+      router.refresh();
+    });
   }
 
   return (
@@ -182,18 +265,34 @@ export function GradeSemanal({
         </Link>
       </div>
 
-      {servicos.length > 1 && (
-        <div className="mt-3 flex flex-wrap gap-3">
-          {servicos.map((s, i) => {
-            const cor = corServico(i);
-            return (
-              <span key={s.id} className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
-                <span className={`h-2.5 w-2.5 rounded-full ${cor.dot}`} />
-                {SERVICE_LABEL[s.tipo] ?? s.tipo}
-              </span>
-            );
-          })}
-        </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        {servicos.length > 1 ? (
+          <div className="flex flex-wrap gap-3">
+            {servicos.map((s, i) => {
+              const cor = corServico(i);
+              return (
+                <span key={s.id} className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
+                  <span className={`h-2.5 w-2.5 rounded-full ${cor.dot}`} />
+                  {SERVICE_LABEL[s.tipo] ?? s.tipo}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <span />
+        )}
+        <button
+          type="button"
+          disabled={pending}
+          onClick={abrirMarcarTudo}
+          className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+        >
+          Marcar semana inteira como livre
+        </button>
+      </div>
+
+      {pending && (
+        <p className="mt-2 text-xs text-foreground/50">Salvando...</p>
       )}
 
       {erro && (
@@ -330,6 +429,49 @@ export function GradeSemanal({
             {diaSemanaAbrev(selecao.data)} {diaDoMes(selecao.data)} · {selecao.celula.horaInicio}–
             {selecao.celula.horaFim}
           </p>
+        </PainelInferior>
+      )}
+
+      {selecao.modo === "bulk_escolher_servico" && (
+        <PainelInferior titulo="Marcar semana inteira — escolha o serviço" onFechar={fechar}>
+          <div className="flex flex-wrap gap-2">
+            {servicos.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => escolherServicoBulk(s.id)}
+                className="rounded-full border border-border px-4 py-2 text-sm font-medium transition-colors hover:border-primary"
+              >
+                {SERVICE_LABEL[s.tipo] ?? s.tipo}
+              </button>
+            ))}
+          </div>
+        </PainelInferior>
+      )}
+
+      {selecao.modo === "bulk_confirmar" && (
+        <PainelInferior titulo="Repetir toda semana, sempre?" onFechar={fechar}>
+          <p className="text-sm text-foreground/70">
+            Preenche todo horário ainda livre nesta semana ({rotuloSemana}), de{" "}
+            {String(horaMin).padStart(2, "0")}:00 a {String(horaMax).padStart(2, "0")}:00 — sem
+            mexer no que já está marcado ou reservado.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => confirmarBulk(true)}
+              className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+            >
+              Sim, toda semana
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmarBulk(false)}
+              className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
+            >
+              Só esta semana
+            </button>
+          </div>
         </PainelInferior>
       )}
     </div>
