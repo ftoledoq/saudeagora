@@ -249,6 +249,38 @@ export async function salvarPadraoRecorrente(formData: FormData): Promise<{ erro
   return { error: null };
 }
 
+// Remove só a linha de recurring_availability que colide exatamente com
+// um dia_semana+hora_inicio — não o grupo inteiro (um grupo pode cobrir
+// vários dias da semana no mesmo horário; só o dia em conflito precisa
+// sumir pra liberar a criação de uma regra nova ali). Existe porque a
+// reconstrução da grade (visual, por toque) removeu a única tela que
+// permitia apagar uma regra recorrente presa — sem isso, uma regra
+// "fantasma" (criada numa tentativa anterior que falhou antes de gerar
+// horário visível) bloqueia pra sempre qualquer nova tentativa no mesmo
+// dia+hora com "já existe um padrão", sem nenhum jeito de resolver pela
+// interface. Chamada como recuperação inline logo depois desse erro
+// específico (ver grade-semanal.tsx), não como gestão geral de padrões.
+export async function removerRegraRecorrente(formData: FormData) {
+  const supabase = await createClient();
+  const { id: professionalId } = await getOwnProfessional(supabase);
+
+  const diaSemana = Number(formData.get("dia_semana"));
+  const horaInicio = String(formData.get("hora_inicio") ?? "");
+  if (!(diaSemana >= 0 && diaSemana <= 6) || !horaInicio) {
+    throw new Error("Dados inválidos pra remover a regra.");
+  }
+
+  const { error } = await supabase
+    .from("recurring_availability")
+    .delete()
+    .eq("professional_id", professionalId)
+    .eq("dia_semana", diaSemana)
+    .eq("hora_inicio", horaInicio);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/agenda");
+}
+
 const LIMITE_DIAS_EXCECAO = 60;
 
 // Bloqueia um dia ou um período mesmo dentro do padrão ("toda segunda,

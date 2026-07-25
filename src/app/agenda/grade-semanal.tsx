@@ -3,7 +3,12 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { adicionarDisponibilidade, salvarPadraoRecorrente, removerDisponibilidade } from "./actions";
+import {
+  adicionarDisponibilidade,
+  salvarPadraoRecorrente,
+  removerDisponibilidade,
+  removerRegraRecorrente,
+} from "./actions";
 import { corServico, COR_RESERVADO, chaveCelula, diaSemanaDe, linhasQueOBlocoOcupa } from "./grade-helpers";
 import { diaSemanaAbrev, diaDoMes } from "@/lib/format";
 
@@ -96,6 +101,19 @@ export function GradeSemanal({
   const router = useRouter();
   const [selecao, setSelecao] = useState<Selecao>({ modo: "idle" });
   const [erro, setErro] = useState<string | null>(null);
+  // Regra recorrente "fantasma" — sobra de uma tentativa anterior (nesta
+  // sessão de testes, ou de qualquer edição futura) que criou a REGRA mas
+  // nunca gerou horário visível pra ela, deixando o dia+hora pra sempre
+  // rejeitado com "já existe um padrão" sem nenhuma forma de resolver.
+  // Guarda o suficiente pra oferecer "remover e tentar de novo" inline no
+  // lugar do erro, em vez de exigir uma tela de gestão de padrões inteira
+  // só pra esse caso de recuperação.
+  const [conflito, setConflito] = useState<{
+    diaSemana: number;
+    hora: string;
+    data: string;
+    serviceId: string;
+  } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const cobertasSet = new Set(celulasCobertas);
@@ -131,6 +149,7 @@ export function GradeSemanal({
     if (selecao.modo !== "confirmar_repeticao") return;
     const { data, hora, serviceId } = selecao;
     fechar();
+    setConflito(null);
     startTransition(async () => {
       const fd = new FormData();
       let resultado: { error: string | null };
@@ -159,12 +178,54 @@ export function GradeSemanal({
             resultado = resultadoCelula;
           }
         }
+
+        // Regra "fantasma": criada numa tentativa anterior (que nunca
+        // chegou a gerar horário visível), sobra bloqueando pra sempre
+        // qualquer nova tentativa nesse mesmo dia+hora. Sem recuperação
+        // aqui, o único jeito de resolver era SQL direto no banco — bug
+        // real relatado. Oferece "remover e tentar de novo" junto do erro.
+        if (resultado.error?.includes("Já existe um padrão")) {
+          setConflito({ diaSemana: diaSemanaDe(data), hora, data, serviceId });
+        }
       } else {
         fd.append("data", data);
         fd.append("hora_inicio", hora);
         fd.append("service_id", serviceId);
         resultado = await adicionarDisponibilidade(fd);
       }
+      if (resultado.error) setErro(resultado.error);
+      router.refresh();
+    });
+  }
+
+  function resolverConflito() {
+    if (!conflito) return;
+    const { diaSemana, hora, data, serviceId } = conflito;
+    setConflito(null);
+    setErro(null);
+    startTransition(async () => {
+      const fdRemover = new FormData();
+      fdRemover.append("dia_semana", String(diaSemana));
+      fdRemover.append("hora_inicio", hora);
+      await removerRegraRecorrente(fdRemover);
+
+      const fdNovo = new FormData();
+      fdNovo.append("dias", String(diaSemana));
+      fdNovo.append("hora_inicio", hora);
+      fdNovo.append("service_id", serviceId);
+      const resultado = await salvarPadraoRecorrente(fdNovo);
+
+      if (!resultado.error) {
+        const fdCelula = new FormData();
+        fdCelula.append("data", data);
+        fdCelula.append("hora_inicio", hora);
+        fdCelula.append("service_id", serviceId);
+        const resultadoCelula = await adicionarDisponibilidade(fdCelula);
+        if (resultadoCelula.error && !resultadoCelula.error.includes("já tem um horário cadastrado")) {
+          resultado.error = resultadoCelula.error;
+        }
+      }
+
       if (resultado.error) setErro(resultado.error);
       router.refresh();
     });
@@ -337,9 +398,19 @@ export function GradeSemanal({
       )}
 
       {erro && (
-        <p className="mt-3 rounded-lg border border-error bg-error-light px-3 py-2 text-xs text-error">
-          {erro}
-        </p>
+        <div className="mt-3 rounded-lg border border-error bg-error-light px-3 py-2 text-xs text-error">
+          <p>{erro}</p>
+          {conflito && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={resolverConflito}
+              className="mt-1.5 font-semibold underline disabled:opacity-50"
+            >
+              Remover regra existente nesse horário e aplicar este novo
+            </button>
+          )}
+        </div>
       )}
 
       <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
