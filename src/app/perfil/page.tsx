@@ -229,13 +229,13 @@ export default async function PerfilPage() {
           </form>
         )}
         <form action={sair} className={contaAtiva ? "border-t border-border" : undefined}>
-          <button
-            type="submit"
+          <ConfirmarAcaoButton
+            mensagemConfirmacao="Sair da sua conta?"
             className="flex w-full items-center gap-3 px-5 py-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary-light"
           >
             <span className="text-foreground/50">{PerfilIcons.sair}</span>
             <span>Sair</span>
-          </button>
+          </ConfirmarAcaoButton>
         </form>
       </div>
 
