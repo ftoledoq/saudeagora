@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { adicionarDisponibilidade, salvarPadraoRecorrente, removerDisponibilidade } from "./actions";
-import { corServico, chaveCelula, diaSemanaDe, linhasQueOBlocoOcupa } from "./grade-helpers";
+import { corServico, COR_RESERVADO, chaveCelula, diaSemanaDe, linhasQueOBlocoOcupa } from "./grade-helpers";
 import { diaSemanaAbrev, diaDoMes } from "@/lib/format";
 
 const SERVICE_LABEL: Record<string, string> = {
@@ -287,22 +287,26 @@ export function GradeSemanal({
         </Link>
       </div>
 
+      {/* Legenda sempre visível — cobre os três estados possíveis na
+          grade (serviço(s) livre(s) + reservado), não só quando há mais
+          de um serviço. Antes só aparecia com 2+ serviços, deixando
+          "Reservado" sem nenhuma explicação visual pra quem tem um só. */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        {servicos.length > 1 ? (
-          <div className="flex flex-wrap gap-3">
-            {servicos.map((s, i) => {
-              const cor = corServico(i);
-              return (
-                <span key={s.id} className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
-                  <span className={`h-2.5 w-2.5 rounded-full ${cor.dot}`} />
-                  {SERVICE_LABEL[s.tipo] ?? s.tipo}
-                </span>
-              );
-            })}
-          </div>
-        ) : (
-          <span />
-        )}
+        <div className="flex flex-wrap gap-3">
+          {servicos.map((s, i) => {
+            const cor = corServico(i);
+            return (
+              <span key={s.id} className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
+                <span className={`h-2.5 w-2.5 rounded-full ${cor.dot}`} />
+                {SERVICE_LABEL[s.tipo] ?? s.tipo}
+              </span>
+            );
+          })}
+          <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
+            <span className={`h-2.5 w-2.5 rounded-full ${COR_RESERVADO.bg} ring-1 ring-inset ring-gray-400`} />
+            Reservado
+          </span>
+        </div>
         <button
           type="button"
           disabled={pending}
@@ -372,7 +376,7 @@ export function GradeSemanal({
                         type="button"
                         onClick={() => tocarCelulaReservada(ocupada, data)}
                         style={{ gridRow: `span ${linhas}` }}
-                        className="min-h-[52px] border-b border-l border-border bg-border/50 px-1.5 py-1 text-left text-[10px] font-medium leading-tight text-foreground/60"
+                        className={`min-h-[52px] border-b border-l ${COR_RESERVADO.borda} ${COR_RESERVADO.bg} px-1.5 py-1 text-left text-[10px] font-medium leading-tight ${COR_RESERVADO.texto}`}
                       >
                         {ocupada.clienteNome ?? "Reservado"}
                       </button>

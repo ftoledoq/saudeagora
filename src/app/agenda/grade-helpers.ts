@@ -68,16 +68,35 @@ export function linhasQueOBlocoOcupa(horaInicioHHMM: string, horaFimHHMM: string
 // usada em todo o resto da Agenda/Perfil) — cores deliberadamente fora de
 // primary/accent (que já têm significado de UI — botão principal/CTA)
 // pra não confundir com estado de ação.
+//
+// `bg` usa a MESMA cor de `dot`, só com opacidade reduzida (/15) em vez de
+// um hex claro escolhido à parte — bug real relatado com captura de tela:
+// o tom pastel de accent (#ffe3d9) tinha deriva perceptível pra rosa/salmão,
+// não batendo com o laranja da legenda (bg-accent sólido). Opacidade sobre
+// a mesma cor garante o mesmo matiz sempre, só mais claro — sem re-escolher
+// um hex à mão que pode divergir visualmente do original.
 export const PALETA_SERVICO = [
   { dot: "bg-primary", bg: "bg-primary-light", texto: "text-primary", borda: "border-primary" },
-  { dot: "bg-accent", bg: "bg-[#ffe3d9]", texto: "text-accent", borda: "border-accent" },
-  { dot: "bg-[#6b5b95]", bg: "bg-[#ece7f5]", texto: "text-[#6b5b95]", borda: "border-[#6b5b95]" },
-  { dot: "bg-[#b8862c]", bg: "bg-[#f6ecd8]", texto: "text-[#b8862c]", borda: "border-[#b8862c]" },
+  { dot: "bg-accent", bg: "bg-[#ff6b4a]/15", texto: "text-accent", borda: "border-accent" },
+  { dot: "bg-[#6b5b95]", bg: "bg-[#6b5b95]/15", texto: "text-[#6b5b95]", borda: "border-[#6b5b95]" },
+  { dot: "bg-[#b8862c]", bg: "bg-[#b8862c]/15", texto: "text-[#b8862c]", borda: "border-[#b8862c]" },
 ];
 
 export function corServico(indice: number) {
   return PALETA_SERVICO[indice % PALETA_SERVICO.length];
 }
+
+// Estado "reservado" (booking confirmado) — cinza de verdade, não o token
+// `border` do design system (#e6ddd0, propositalmente quente/bege pra
+// bordas). Bug real relatado: o texto da tela dizia "aparecem em cinza"
+// mas a célula reservada usava bg-border, que é bege — as duas
+// precisavam bater, e cinza é o que a interface já promete ao
+// profissional.
+export const COR_RESERVADO = {
+  bg: "bg-gray-200",
+  texto: "text-gray-600",
+  borda: "border-gray-300",
+};
 
 export function chaveCelula(dataIso: string, horaHHMM: string): string {
   return `${dataIso}|${horaHHMM}`;
