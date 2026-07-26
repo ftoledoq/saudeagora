@@ -17,6 +17,7 @@ import {
   linhasQueOBlocoOcupa,
   hojeIsoSP,
 } from "./grade-helpers";
+import { somarMinutos } from "./shared";
 import { diaSemanaAbrev, diaDoMes } from "@/lib/format";
 
 const SERVICE_LABEL: Record<string, string> = {
@@ -323,22 +324,59 @@ export function GradeSemanal({
     fechar();
     const hojeIso = hojeIsoSP();
     const diasAPartirDeHoje = diasIso.filter((data) => data >= hojeIso);
+
+    // Quantas linhas de hora o serviço escolhido ocupa (serviço >60min
+    // cobre mais de uma linha — ex: 90min cobre a própria hora + a
+    // seguinte). cobertasSet/celulas refletem o estado ANTES desta
+    // operação começar (vieram por props, no snapshot da última renderização)
+    // — sozinhos não bastam pra saber que a linha seguinte, ainda "vazia"
+    // nesse snapshot, está prestes a ser coberta pelo bloco desta mesma
+    // hora.
+    const servico = servicos.find((s) => s.id === serviceId);
+    const linhasBloco = servico
+      ? linhasQueOBlocoOcupa(`${String(horaMin).padStart(2, "0")}:00`, somarMinutos(`${String(horaMin).padStart(2, "0")}:00`, servico.duracao_min))
+      : 1;
+
+    // Bug real de auditoria: rodar uma chamada por hora em PARALELO (Promise.all),
+    // cada uma decidindo "vazio ou não" só pelo snapshot de props, deixava
+    // um serviço de mais de 1h criar dois blocos sobrepostos pro mesmo dia
+    // (um pela iteração da hora de início, outro pela iteração da hora
+    // seguinte, que não tinha como enxergar a escrita em andamento da
+    // primeira). Um dos dois ficava "coberto" visualmente pelo outro na
+    // grade, mas continuava de pé no banco — reservável pelo cliente sem
+    // o profissional nunca ver ou poder remover. Corrigido calculando o
+    // plano inteiro (quais dia+hora entram) de uma vez, de forma síncrona,
+    // reservando as linhas que cada bloco vai ocupar ANTES de decidir a
+    // próxima hora — só depois disso dispara as chamadas de verdade.
+    const ocupadoNestaOperacao = new Set<string>();
+    function reservar(data: string, horaInicioNum: number) {
+      for (let i = 0; i < linhasBloco; i++) {
+        ocupadoNestaOperacao.add(chaveCelula(data, `${String(horaInicioNum + i).padStart(2, "0")}:00`));
+      }
+    }
+    function livre(data: string, horaLabel: string): boolean {
+      const chave = chaveCelula(data, horaLabel);
+      return !cobertasSet.has(chave) && !celulas[chave] && !ocupadoNestaOperacao.has(chave);
+    }
+
     startTransition(async () => {
       let primeiroErro: string | null = null;
 
       if (repetir) {
+        const chamadas: FormData[] = [];
+        for (const h of horas) {
+          const horaLabel = `${String(h).padStart(2, "0")}:00`;
+          const diasLivres = diasAPartirDeHoje.filter((data) => livre(data, horaLabel));
+          if (diasLivres.length === 0) continue;
+          diasLivres.forEach((data) => reservar(data, h));
+          const fd = new FormData();
+          diasLivres.forEach((data) => fd.append("dias", String(diaSemanaDe(data))));
+          fd.append("hora_inicio", horaLabel);
+          fd.append("service_id", serviceId);
+          chamadas.push(fd);
+        }
         await Promise.all(
-          horas.map(async (h) => {
-            const horaLabel = `${String(h).padStart(2, "0")}:00`;
-            const diasLivres = diasAPartirDeHoje.filter((data) => {
-              const chave = chaveCelula(data, horaLabel);
-              return !cobertasSet.has(chave) && !celulas[chave];
-            });
-            if (diasLivres.length === 0) return;
-            const fd = new FormData();
-            diasLivres.forEach((data) => fd.append("dias", String(diaSemanaDe(data))));
-            fd.append("hora_inicio", horaLabel);
-            fd.append("service_id", serviceId);
+          chamadas.map(async (fd) => {
             const resultado = await salvarPadraoRecorrente(fd);
             if (resultado.error && !primeiroErro) primeiroErro = resultado.error;
           })
@@ -348,8 +386,8 @@ export function GradeSemanal({
         for (const h of horas) {
           const horaLabel = `${String(h).padStart(2, "0")}:00`;
           for (const data of diasAPartirDeHoje) {
-            const chave = chaveCelula(data, horaLabel);
-            if (!cobertasSet.has(chave) && !celulas[chave]) {
+            if (livre(data, horaLabel)) {
+              reservar(data, h);
               celulasVazias.push({ data, hora: horaLabel });
             }
           }
