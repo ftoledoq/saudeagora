@@ -12,7 +12,12 @@ export function SiteHeader({ autenticado }: { autenticado: boolean }) {
     // scroll.
     <header className="border-b border-border bg-background sticky top-0 z-40">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        <Link href="/" className="flex items-center gap-2">
+        {/* "/" pra quem não tem sessão (é a landing de verdade pra essa
+            pessoa); "/buscar" pra quem já está logado — "/" redireciona pra
+            lá de qualquer forma (ver src/app/page.tsx), então mandar direto
+            evita o pulo visual de renderizar a landing por uma fração de
+            segundo antes do redirect só pra sair dela de novo. */}
+        <Link href={autenticado ? "/buscar" : "/"} className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <BrandMark size={20} />
           </span>
