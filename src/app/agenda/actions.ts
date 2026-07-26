@@ -90,7 +90,17 @@ export async function adicionarDisponibilidade(formData: FormData): Promise<{ er
   return { error: null };
 }
 
-export async function removerDisponibilidade(formData: FormData) {
+// Retorna se a remoção bateu com uma regra recorrente ativa (e os dados
+// pra identificá-la) — antes não devolvia nada, e a grade não tinha como
+// oferecer "parar de repetir pra sempre" logo em seguida. Auditoria (Parte
+// 1) encontrou essa lacuna real: sem isso, o único jeito de parar um
+// padrão recorrente de vez era o caminho acidental de "já existe um
+// padrão" na tela de criação — não existia nenhuma forma direta e
+// descobrível de fazer isso a partir da remoção, que é onde a intenção
+// "quero parar de atender nesse horário" realmente aparece.
+export async function removerDisponibilidade(
+  formData: FormData
+): Promise<{ regraAtiva: { diaSemana: number; horaInicio: string } | null }> {
   const supabase = await createClient();
   const { id: professionalId } = await getOwnProfessional(supabase);
 
@@ -103,7 +113,7 @@ export async function removerDisponibilidade(formData: FormData) {
     .eq("professional_id", professionalId)
     .eq("status", "livre")
     .maybeSingle();
-  if (!slot) return;
+  if (!slot) return { regraAtiva: null };
 
   const { error } = await supabase
     .from("availability")
@@ -139,6 +149,7 @@ export async function removerDisponibilidade(formData: FormData) {
   }
 
   revalidatePath("/agenda");
+  return regraDoPadrao ? { regraAtiva: { diaSemana, horaInicio: slot.hora_inicio } } : { regraAtiva: null };
 }
 
 // Cada padrão salvo é um GRUPO (grupo_id) — um conjunto de dias + um

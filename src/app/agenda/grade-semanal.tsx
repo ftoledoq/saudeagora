@@ -25,6 +25,10 @@ const SERVICE_LABEL: Record<string, string> = {
   pilates: "Pilates",
 };
 
+const NOME_DIA_SEMANA = [
+  "domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado",
+];
+
 type Servico = { id: string; tipo: string; duracao_min: number };
 
 export type CelulaOcupada = {
@@ -42,7 +46,8 @@ type Selecao =
   | { modo: "confirmar_repeticao"; data: string; hora: string; serviceId: string }
   | { modo: "ver_reservado"; celula: CelulaOcupada; data: string }
   | { modo: "bulk_escolher_servico" }
-  | { modo: "bulk_confirmar"; serviceId: string };
+  | { modo: "bulk_confirmar"; serviceId: string }
+  | { modo: "oferecer_parar_padrao"; diaSemana: number; horaInicio: string };
 
 // Painel simples que sobe do rodapé — mesmo padrão visual já usado no
 // bottom sheet de pin do mapa em /buscar (visao-busca.tsx): fundo branco,
@@ -242,13 +247,37 @@ export function GradeSemanal({
   // extra, é o próprio espírito de "tocar e alterar" pedido pra edição
   // direta na grade. Se o horário pertence a um padrão recorrente,
   // removerDisponibilidade já registra a exceção certa (mesma lógica de
-  // sempre, só a interface que mudou).
+  // sempre, só a interface que mudou) — mas isso só tira ESSA data, o
+  // padrão continua repetindo nas semanas seguintes. Lacuna real
+  // encontrada em auditoria: não existia nenhuma forma direta de parar
+  // um padrão de vez a partir daqui — oferece a opção logo em seguida,
+  // sem interromper a remoção em si (que já aconteceu).
   function tocarCelulaLivre(celula: CelulaOcupada) {
     setErro(null);
     startTransition(async () => {
       const fd = new FormData();
       fd.append("id", celula.id);
-      await removerDisponibilidade(fd);
+      const resultado = await removerDisponibilidade(fd);
+      router.refresh();
+      if (resultado.regraAtiva) {
+        setSelecao({
+          modo: "oferecer_parar_padrao",
+          diaSemana: resultado.regraAtiva.diaSemana,
+          horaInicio: resultado.regraAtiva.horaInicio,
+        });
+      }
+    });
+  }
+
+  function pararPadraoParaSempre() {
+    if (selecao.modo !== "oferecer_parar_padrao") return;
+    const { diaSemana, horaInicio } = selecao;
+    fechar();
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.append("dia_semana", String(diaSemana));
+      fd.append("hora_inicio", horaInicio);
+      await removerRegraRecorrente(fd);
       router.refresh();
     });
   }
@@ -602,6 +631,33 @@ export function GradeSemanal({
               className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
             >
               Só esta semana
+            </button>
+          </div>
+        </PainelInferior>
+      )}
+
+      {selecao.modo === "oferecer_parar_padrao" && (
+        <PainelInferior titulo="Parar de repetir esse horário?" onFechar={fechar}>
+          <p className="text-sm text-foreground/70">
+            Essa data foi removida. Esse horário também faz parte do seu
+            padrão de toda {NOME_DIA_SEMANA[selecao.diaSemana]}, às{" "}
+            {selecao.horaInicio} — ele vai continuar aparecendo nas próximas
+            semanas até você parar de repetir.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={pararPadraoParaSempre}
+              className="flex-1 rounded-full bg-error px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+            >
+              Parar de repetir pra sempre
+            </button>
+            <button
+              type="button"
+              onClick={fechar}
+              className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
+            >
+              Só essa data mesmo
             </button>
           </div>
         </PainelInferior>
