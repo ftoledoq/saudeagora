@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { cadastrarProfissional, type CadastroFormState } from "./actions";
 import { formatCpf } from "@/lib/cpf";
+import { formatTelefone } from "@/lib/telefone";
 import type { Bairro } from "@/types/database";
 
 const SERVICOS = [
@@ -21,6 +22,7 @@ export function CadastroForm({ bairros }: { bairros: Bairro[] }) {
   const [state, formAction, pending] = useActionState(cadastrarProfissional, initialState);
   const [tipo, setTipo] = useState<string>("personal_trainer");
   const [cpfDisplay, setCpfDisplay] = useState("");
+  const [telefoneDisplay, setTelefoneDisplay] = useState("");
 
   return (
     <form action={formAction} className="flex flex-col gap-8">
@@ -67,7 +69,10 @@ export function CadastroForm({ bairros }: { bairros: Bairro[] }) {
             id="telefone"
             name="telefone"
             required
+            value={telefoneDisplay}
+            onChange={(e) => setTelefoneDisplay(formatTelefone(e.target.value))}
             placeholder="(00) 00000-0000"
+            maxLength={15}
             className={inputClass}
           />
         </Field>

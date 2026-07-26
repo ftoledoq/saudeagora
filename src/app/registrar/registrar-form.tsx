@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { registrarCliente, type RegistrarFormState } from "./actions";
+import { formatTelefone } from "@/lib/telefone";
 
 const initialState: RegistrarFormState = { error: null };
 const inputClass =
@@ -10,6 +11,7 @@ const labelClass = "text-sm font-medium text-foreground/80";
 
 export function RegistrarForm({ next, ref }: { next: string; ref: string | null }) {
   const [state, formAction, pending] = useActionState(registrarCliente, initialState);
+  const [telefoneDisplay, setTelefoneDisplay] = useState("");
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -33,7 +35,16 @@ export function RegistrarForm({ next, ref }: { next: string; ref: string | null 
         <label htmlFor="telefone" className={labelClass}>
           Telefone
         </label>
-        <input id="telefone" name="telefone" required placeholder="(00) 00000-0000" className={inputClass} />
+        <input
+          id="telefone"
+          name="telefone"
+          required
+          value={telefoneDisplay}
+          onChange={(e) => setTelefoneDisplay(formatTelefone(e.target.value))}
+          placeholder="(00) 00000-0000"
+          maxLength={15}
+          className={inputClass}
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { atualizarMeusDados, type MeusDadosFormState } from "./actions";
 import { Avatar } from "@/components/avatar";
+import { formatTelefone } from "@/lib/telefone";
 
 const initialState: MeusDadosFormState = { error: null, success: false };
 const inputClass =
@@ -23,6 +24,11 @@ export function MeusDadosForm({
   fotoUrlAtual: string | null;
 }) {
   const [state, formAction, pending] = useActionState(atualizarMeusDados, initialState);
+  // Formata já na carga — telefone salvo antes desta correção pode estar
+  // sem o padrão (a coluna sempre aceitou texto livre, nunca validou
+  // formato), formatTelefone normaliza os dígitos independente de como
+  // estava guardado.
+  const [telefoneDisplay, setTelefoneDisplay] = useState(() => formatTelefone(telefoneAtual));
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -64,8 +70,10 @@ export function MeusDadosForm({
           id="telefone"
           name="telefone"
           required
-          defaultValue={telefoneAtual}
+          value={telefoneDisplay}
+          onChange={(e) => setTelefoneDisplay(formatTelefone(e.target.value))}
           placeholder="(00) 00000-0000"
+          maxLength={15}
           className={inputClass}
         />
       </div>
