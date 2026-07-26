@@ -17,10 +17,10 @@ const OPCOES_TIPO = [
   { value: "pilates", label: "Pilates" },
 ];
 
-// Formulário mínimo (tipo, preço, duração) — sem editar/remover/reordenar
-// serviço existente nesta rodada, é só o suficiente pra um profissional
-// real conseguir ter mais de um serviço cadastrado (decisão do founder,
-// ver comentário em actions.ts).
+// Formulário mínimo (tipo, preço, duração) pra criar um serviço novo —
+// editar preço/duração de um já existente é ListaServicos +
+// EditarServicoForm; remover/reordenar continua fora do escopo (ver
+// comentário em actions.ts).
 export function AdicionarServicoForm() {
   const [state, formAction, pending] = useActionState(action, initialState);
   const [aberto, setAberto] = useState(false);

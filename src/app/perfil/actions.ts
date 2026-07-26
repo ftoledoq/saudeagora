@@ -13,12 +13,12 @@ export async function sair() {
 const TIPOS_VALIDOS = ["personal_trainer", "massagem", "pilates"];
 
 // Mínimo pra destravar teste real de múltiplos serviços (decisão do
-// founder): só cria um serviço novo, sem editar/remover/reordenar os já
-// existentes — isso fica pra outra rodada, não é gestão de catálogo
-// completa. Sem isso, a correção de "duração por serviço" na Agenda
-// (migration 0027) não tinha como ser exercitada por nenhum profissional
-// real — o cadastro só cria um serviço por vez, e não existia nenhuma
-// tela pra adicionar o segundo.
+// founder): só cria um serviço novo — remover/reordenar os já existentes
+// continua fora do escopo (editar preço/duração já existe, ver
+// editarServico abaixo). Sem isso, a correção de "duração por serviço" na
+// Agenda (migration 0027) não tinha como ser exercitada por nenhum
+// profissional real — o cadastro só cria um serviço por vez, e não
+// existia nenhuma tela pra adicionar o segundo.
 export async function adicionarServico(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const {
@@ -52,6 +52,46 @@ export async function adicionarServico(formData: FormData): Promise<{ error: str
   if (error) return { error: error.message };
 
   revalidatePath("/perfil");
+  return { error: null };
+}
+
+// Só preço e duração — tipo não é editável aqui (trocar o tipo de um
+// serviço já oferecido é o mesmo que criar um serviço diferente, não uma
+// correção). Precisa da policy "services_update_own" (migration 0028) —
+// sem ela o UPDATE volta 0 linhas afetadas em silêncio (RLS filtra, não dá
+// erro), por isso o id também é revalidado contra o professional_id aqui,
+// não só confiado ao formulário.
+export async function editarServico(formData: FormData): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: professional } = await supabase
+    .from("professionals")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!professional) return { error: "Essa área é só para profissionais cadastrados." };
+
+  const id = String(formData.get("id") ?? "");
+  const preco = Number(formData.get("preco") ?? "0");
+  const duracaoMin = Number(formData.get("duracao_min") ?? "0");
+
+  if (!id) return { error: "Serviço inválido." };
+  if (!(preco > 0)) return { error: "Informe um preço válido." };
+  if (!(duracaoMin > 0)) return { error: "Informe uma duração válida." };
+
+  const { error } = await supabase
+    .from("services")
+    .update({ preco, duracao_min: duracaoMin })
+    .eq("id", id)
+    .eq("professional_id", professional.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/perfil");
+  revalidatePath("/agenda");
   return { error: null };
 }
 

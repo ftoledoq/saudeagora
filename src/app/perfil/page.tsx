@@ -6,14 +6,9 @@ import { PerfilIcons } from "@/components/perfil-icons";
 import { ConfirmarAcaoButton } from "@/components/confirmar-acao-button";
 import { sair, desativarConta, reativarConta, excluirContaPermanentemente } from "./actions";
 import { AdicionarServicoForm } from "./adicionar-servico-form";
+import { ListaServicos } from "./lista-servicos";
 
 const AJUDA_EMAIL = "saudeagora@zohomail.com";
-
-const SERVICE_LABEL: Record<string, string> = {
-  personal_trainer: "Personal Trainer",
-  massagem: "Massagem",
-  pilates: "Pilates",
-};
 
 function ItemMenu({
   href,
@@ -169,16 +164,7 @@ export default async function PerfilPage() {
             {servicos.length === 0 ? (
               <p className="text-sm text-foreground/60">Nenhum serviço cadastrado.</p>
             ) : (
-              <div className="flex flex-col gap-2">
-                {servicos.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{SERVICE_LABEL[s.tipo] ?? s.tipo}</span>
-                    <span className="text-foreground/60">
-                      R$ {s.preco} · {s.duracao_min} min
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <ListaServicos servicos={servicos} />
             )}
             <AdicionarServicoForm />
           </div>
