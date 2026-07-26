@@ -68,6 +68,14 @@ export function TabBarClient({
 }) {
   const pathname = usePathname();
 
+  // Landing deslogada não tem tab bar — os três destinos (Buscar/Agenda/
+  // Perfil) competiam com o único CTA que a landing devia ter (ver
+  // reformulação da home), e "Agenda"/"Perfil" pra quem não tem conta só
+  // levam a mais um passo de login antes de chegar a lugar nenhum. Some
+  // a barra inteira aqui, não só os dois itens — a landing já tem seu
+  // próprio CTA isolado, não precisa de navegação concorrente embaixo.
+  if (!autenticado && pathname === "/") return null;
+
   const items: TabItem[] = [{ href: "/buscar", label: "Buscar", icon: "buscar" }];
 
   // "Agenda" só existe de verdade pra profissional (própria agenda) e
