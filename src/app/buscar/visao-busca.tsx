@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar } from "@/components/avatar";
+import { ProfessionalPreviewCard } from "@/components/professional-preview-card";
 import { SearchMap, type MapPin } from "@/components/map/search-map-loader";
 
 export type CardBusca = {
@@ -97,22 +98,7 @@ export function VisaoBusca({
               <h2 className="font-display text-lg font-semibold">Perto de {bairroSelecionadoNome}</h2>
               <div className="mt-3 -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
                 {pertoDeVoce.map((c) => (
-                  <Link
-                    key={c.key}
-                    href={`/profissionais/${c.professionalId}`}
-                    className="flex w-48 shrink-0 flex-col rounded-2xl border border-border bg-white p-4 transition-colors hover:border-primary"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Avatar nome={c.nome} photoUrl={c.fotoUrl} size={36} />
-                      <span className="rounded-full bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary">
-                        {c.servicoLabel}
-                      </span>
-                    </div>
-                    <h3 className="mt-2 font-display text-sm font-semibold">{c.nome}</h3>
-                    {c.avaliacaoLabel && <p className="mt-0.5 text-xs text-primary">{c.avaliacaoLabel}</p>}
-                    {c.distanciaLabel && <p className="mt-1 text-xs text-foreground/60">{c.distanciaLabel}</p>}
-                    <p className="mt-1 text-sm font-semibold text-primary">R$ {c.preco}</p>
-                  </Link>
+                  <ProfessionalPreviewCard key={c.key} card={c} />
                 ))}
               </div>
             </div>
