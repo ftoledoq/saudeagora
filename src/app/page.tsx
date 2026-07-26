@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { HeroIllustration } from "@/components/hero-illustration";
+import { BrandMark } from "@/lib/brand-mark";
 import { RevealOnScroll } from "@/components/reveal-on-scroll";
 import {
   ProfessionalPreviewCard,
@@ -59,6 +59,45 @@ const CONFIANCA = [
     icone: (
       <svg {...iconProps}>
         <path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6-4.5-4.2 6.1-.8z" />
+      </svg>
+    ),
+  },
+];
+
+// Estratégia é supply-first (sem profissional não há produto) — argumentos
+// concretos, não genéricos, pro profissional decidir se vale a pena
+// experimentar nesta fase.
+const ARGUMENTOS_PROFISSIONAL = [
+  {
+    titulo: "0% de comissão no período fundador",
+    icone: (
+      <svg {...iconProps}>
+        <line x1="19" y1="5" x2="5" y2="19" />
+        <circle cx="6.5" cy="6.5" r="2.5" />
+        <circle cx="17.5" cy="17.5" r="2.5" />
+      </svg>
+    ),
+  },
+  {
+    titulo: "Encha os horários vagos da sua agenda",
+    icone: (
+      <svg {...iconProps}>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <path d="M8 15l2 2 4-4" />
+      </svg>
+    ),
+  },
+  {
+    titulo: "Você define seu preço e sua disponibilidade — sem exclusividade",
+    icone: (
+      <svg {...iconProps}>
+        <line x1="4" y1="6" x2="20" y2="6" />
+        <circle cx="9" cy="6" r="2" />
+        <line x1="4" y1="12" x2="20" y2="12" />
+        <circle cx="15" cy="12" r="2" />
+        <line x1="4" y1="18" x2="20" y2="18" />
+        <circle cx="9" cy="18" r="2" />
       </svg>
     ),
   },
@@ -177,8 +216,17 @@ export default async function Home() {
       servicoMaisBaratoPorProfissional.set(s.professional_id, { tipo: s.tipo, preco: s.preco });
     }
   }
+  // Ordenado por preço ANTES de recortar pro limite de exibição — sem
+  // isso, com mais profissionais que o limite, o mais barato de todos
+  // (o que define a âncora de preço do hero) podia ficar de fora do
+  // recorte (a lista original vem alfabética), fazendo o hero prometer
+  // um preço que nenhum card visível mostra. Ordenar por preço garante
+  // que o primeiro card visível bate com a âncora do hero sempre.
   const profissionaisComServico = (profissionaisPublicos ?? [])
     .filter((p) => servicoMaisBaratoPorProfissional.has(p.id))
+    .sort(
+      (a, b) => servicoMaisBaratoPorProfissional.get(a.id)!.preco - servicoMaisBaratoPorProfissional.get(b.id)!.preco
+    )
     .slice(0, LIMITE_CARROSSEL_LANDING);
 
   // Foto + avaliação — só pros que de fato vão aparecer no carrossel
@@ -241,71 +289,54 @@ export default async function Home() {
 
   // Nunca um estado vazio — sem profissional real pra mostrar, a prévia
   // vira as três categorias com preço de referência (real, se já existir
-  // algum serviço ativo daquele tipo; senão a faixa típica).
+  // algum serviço ativo daquele tipo; senão a faixa típica). Ordenado por
+  // preço crescente — mesmo motivo do profissionaisComServico acima: o
+  // primeiro card sempre precisa bater com "a partir de R$ X" do hero,
+  // nunca mostrar um número maior logo de cara.
   const categoriasFallback: CategoryPreviewCardData[] = CATEGORIAS.map((c) => ({
     tipo: c.tipo,
     nome: c.nome,
     descricao: c.descricao,
     icone: c.icone,
     precoAPartir: precoMinPorTipo.get(c.tipo) ?? FAIXA_TIPICA[c.tipo],
-  }));
+  })).sort((a, b) => a.precoAPartir - b.precoAPartir);
 
   return (
     <div className="flex flex-col">
       <section className="relative overflow-hidden border-b border-border bg-primary-light">
-        <div className="relative mx-auto grid max-w-6xl gap-8 px-4 pt-10 sm:px-6 sm:pt-14 md:grid-cols-2 md:items-center md:gap-12">
-          <div className="order-2 flex flex-col items-start gap-4 md:order-1">
-            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
-              Profissionais verificados {cidadeTexto}
-            </span>
-            <h1 className="max-w-xl font-display text-4xl font-bold leading-tight tracking-tight text-foreground sm:text-5xl">
-              Personal trainer, massagem e pilates perto de você
-            </h1>
-            <p className="max-w-xl text-lg leading-7 text-foreground/70">
-              Profissionais com cadastro e CREF conferidos manualmente.
-            </p>
-            <p className="text-base font-semibold text-primary">
-              A partir de R$ {precoAncoraHero} a sessão
-            </p>
-            {/* Uma ação só no hero — "Sou profissional" já mora no
-                cabeçalho (src/components/site-header.tsx), não precisa de
-                um segundo link concorrendo com o CTA aqui. */}
-            <Link
-              href="/buscar"
-              className="rounded-full bg-accent px-6 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
-            >
-              Buscar profissionais perto de você
-            </Link>
-          </div>
-          {/* Presença humana no hero — ilustração original (não foto: sem
-              ativo disponível nesta fase, ver componente pra detalhe),
-              mesmo estilo de traço já usado na marca. Fundo sólido, sem
-              blur/translucidez (não é glassmorphism, só uma base pra
-              destacar o traço sobre o verde-claro da seção). */}
-          <div className="order-1 flex justify-center md:order-2">
-            <div className="flex h-56 w-56 items-center justify-center rounded-full bg-white sm:h-72 sm:w-72">
-              <HeroIllustration size={200} />
-            </div>
-          </div>
+        {/* Sem imagem no hero, de propósito — uma ilustração de figura
+            humana foi tentada e rejeitada (não comunicava o serviço,
+            destoava do resto do app). Só a marca, grande e em opacidade
+            bem baixa, puramente de fundo — nunca compete com o texto, que
+            é quem carrega a mensagem aqui. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-24 top-1/2 hidden -translate-y-1/2 opacity-[0.08] sm:block"
+        >
+          <BrandMark size={480} stroke="#0f6e5c" fill="#0f6e5c" />
         </div>
-        {/* Dica de continuidade — funcional (sinaliza que há mais
-            conteúdo abaixo), não decorativa; para de animar sozinha pra
-            quem desativou movimento no sistema (motion-safe:). */}
-        <div className="relative flex justify-center pb-3 pt-2">
-          <svg
-            aria-hidden
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-primary/40 motion-safe:animate-bounce"
+        <div className="relative mx-auto flex max-w-6xl flex-col items-start gap-4 px-4 py-12 sm:px-6 sm:py-16">
+          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
+            Profissionais verificados {cidadeTexto}
+          </span>
+          <h1 className="max-w-xl font-display text-4xl font-bold leading-tight tracking-tight text-foreground sm:text-5xl">
+            Personal trainer, massagem e pilates perto de você
+          </h1>
+          <p className="max-w-xl text-lg leading-7 text-foreground/70">
+            Profissionais com cadastro e CREF conferidos manualmente.
+          </p>
+          <p className="text-base font-semibold text-primary">
+            A partir de R$ {precoAncoraHero} a sessão
+          </p>
+          {/* Uma ação só no hero — "Sou profissional" já mora no
+              cabeçalho (src/components/site-header.tsx), não precisa de
+              um segundo link concorrendo com o CTA aqui. */}
+          <Link
+            href="/buscar"
+            className="rounded-full bg-accent px-6 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
           >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
+            Buscar profissionais perto de você
+          </Link>
         </div>
       </section>
 
@@ -315,9 +346,15 @@ export default async function Home() {
             <h2 className="font-display text-2xl font-semibold tracking-tight">
               {cardsPreview.length > 0 ? "Profissionais aprovados na região" : "O que você encontra por aqui"}
             </h2>
-            <Link href="/buscar" className="text-sm font-semibold text-primary hover:underline">
-              Ver todos →
-            </Link>
+            {/* "Ver todos" só quando há de fato algo real pra ver — antes
+                aparecia sempre, inclusive no estado de categorias
+                (fallback sem profissional real nenhum), levando a uma
+                busca vazia e frustrando quem clicava. */}
+            {cardsPreview.length > 0 && (
+              <Link href="/buscar" className="text-sm font-semibold text-primary hover:underline">
+                Ver todos →
+              </Link>
+            )}
           </div>
           <div className="mt-8 -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
             {cardsPreview.length > 0
@@ -346,6 +383,38 @@ export default async function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+      </RevealOnScroll>
+
+      {/* Estratégia é supply-first (sem profissional não há produto) —
+          lacuna crítica: antes disto, a captação de profissional
+          dependia inteira de um link discreto no cabeçalho, sem nenhum
+          argumento. Fundo com tingimento (bg-primary-light) pra separar
+          visualmente do funil de cliente (seções brancas ao redor) —
+          esta seção fala com outro público. */}
+      <RevealOnScroll>
+        <section className="border-y border-border bg-primary-light">
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+            <h2 className="font-display text-2xl font-semibold tracking-tight">
+              Você é profissional de bem-estar?
+            </h2>
+            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+              {ARGUMENTOS_PROFISSIONAL.map((item) => (
+                <div key={item.titulo} className="rounded-2xl border border-border bg-white p-5">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-light text-primary">
+                    {item.icone}
+                  </span>
+                  <p className="mt-3 text-sm font-semibold leading-6 text-foreground">{item.titulo}</p>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/cadastro"
+              className="mt-8 inline-block rounded-full border border-primary px-6 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
+            >
+              Quero me cadastrar como profissional
+            </Link>
           </div>
         </section>
       </RevealOnScroll>
