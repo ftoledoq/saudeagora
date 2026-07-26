@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AgendarForm } from "./agendar-form";
+import { hojeIsoSP } from "@/lib/format";
 import type { Availability, Bairro } from "@/types/database";
 
 type ProfessionalForAgendar = {
@@ -36,7 +37,12 @@ export default async function AgendarPage({
     .maybeSingle<ProfessionalForAgendar>();
   if (!professional) notFound();
 
-  const hoje = new Date().toISOString().slice(0, 10);
+  // UTC puro rolaria pro dia seguinte entre 21h e meia-noite de Brasília,
+  // escondendo os últimos horários livres de hoje bem no momento em que
+  // um cliente mais provavelmente está buscando algo pra essa mesma noite
+  // — mesma classe de bug de fuso já corrigida em agenda/ (ver
+  // src/lib/format.ts), achada aqui em auditoria (Parte 1).
+  const hoje = hojeIsoSP();
   const [{ data: servicos }, { data: slots }, { data: bairros }, { data: enderecosRaw }] =
     await Promise.all([
       supabase

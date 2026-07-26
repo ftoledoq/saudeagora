@@ -2,19 +2,13 @@
 // server e client component usam os mesmos, então ficam separados de
 // shared.ts (que é sobre bookings/avaliação, não sobre a grade em si).
 
-// "Hoje" em America/Sao_Paulo (YYYY-MM-DD), nunca `new Date().toISOString()`
-// puro — esse lê o dia UTC do processo, que diverge do dia real da região
-// piloto (RJ+SP, sempre UTC-3) entre 21h e meia-noite de horário de
-// Brasília, quando o UTC já virou o dia seguinte. Bug real de auditoria:
-// tanto agenda/page.tsx (limite de navegação pra semana atual, filtro de
-// exceções) quanto agenda/recurring.ts (horizonte de geração) calculavam
-// "hoje" cru em UTC — mesma classe de bug de fuso já corrigida em
-// US-07/08 (ver src/lib/format.ts), reintroduzida aqui por não ter
-// passado pelo mesmo cuidado. Fonte única agora, os dois importam daqui.
-export function hojeIsoSP(): string {
-  const partes = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" });
-  return partes.split(" ")[0];
-}
+// Re-exportado por compatibilidade — todo o resto deste módulo (e vários
+// outros arquivos da Agenda) já importa "hojeIsoSP" daqui. O helper em si
+// mora em src/lib/format.ts agora (ver comentário lá): auditoria achou o
+// mesmo bug de fuso reintroduzido em profissionais/[id]/agendar/page.tsx,
+// fora do escopo original de src/app/agenda — precisava de um lugar
+// importável por qualquer rota, não só pela Agenda do profissional.
+export { hojeIsoSP } from "@/lib/format";
 
 // Segunda a domingo de verdade — sem isso, "semana" viraria ambíguo (a
 // API do JS considera domingo o primeiro dia).

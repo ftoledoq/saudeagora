@@ -1,3 +1,14 @@
+// "Hoje" em America/Sao_Paulo (YYYY-MM-DD), nunca `new Date().toISOString()`
+// puro — esse lê o dia UTC do processo, que diverge do dia real da região
+// piloto (RJ+SP, sempre UTC-3) entre 21h e meia-noite de horário de
+// Brasília, quando o UTC já virou o dia seguinte. Único helper canônico —
+// qualquer lugar que precisar de "hoje" (não de uma data já conhecida)
+// importa daqui, nunca reimplementa com `new Date()` cru.
+export function hojeIsoSP(): string {
+  const partes = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  return partes.split(" ")[0];
+}
+
 // Fuso fixo, não o do ambiente do servidor — em produção (Vercel etc.) o
 // processo roda em UTC por padrão, então confiar no fuso "ambiente" gera
 // exibição errada mesmo com o dado correto no banco. Região piloto inteira
