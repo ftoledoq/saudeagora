@@ -13,9 +13,10 @@ const SERVICE_LABEL: Record<string, string> = {
 
 // Booking precisa ter passado por 'confirmado' pra liberar o chat (US-09) —
 // mesmo conjunto de status aceito pela RLS de insert em messages
-// (booking_chat_liberado, migration 0017). 'solicitado', 'recusado' e
-// cancelado_* nunca liberam.
-const STATUS_LIBERA_CHAT = ["confirmado", "concluido", "no_show_cliente", "no_show_profissional"];
+// (booking_chat_liberado, migration 0017/0030). 'solicitado', 'recusado' e
+// cancelado_* nunca liberam. 'em_andamento' libera — sessão em curso
+// precisa continuar podendo trocar mensagem.
+const STATUS_LIBERA_CHAT = ["confirmado", "em_andamento", "concluido", "no_show_cliente", "no_show_profissional"];
 
 export default async function ChatPage({
   params,

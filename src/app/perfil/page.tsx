@@ -7,8 +7,7 @@ import { ConfirmarAcaoButton } from "@/components/confirmar-acao-button";
 import { sair, desativarConta, reativarConta, excluirContaPermanentemente } from "./actions";
 import { AdicionarServicoForm } from "./adicionar-servico-form";
 import { ListaServicos } from "./lista-servicos";
-
-const AJUDA_EMAIL = "saudeagora@zohomail.com";
+import { AJUDA_EMAIL } from "@/lib/contato";
 
 function ItemMenu({
   href,
@@ -97,7 +96,7 @@ export default async function PerfilPage() {
         .from("bookings")
         .select("service_id")
         .eq("professional_id", professional.id)
-        .in("status", ["solicitado", "confirmado"])
+        .in("status", ["solicitado", "confirmado", "em_andamento"])
         .gte("data_hora", new Date().toISOString());
       for (const b of futuros ?? []) {
         futurosPorServico[b.service_id] = (futurosPorServico[b.service_id] ?? 0) + 1;

@@ -442,6 +442,56 @@ export async function reportarClienteNaoCompareceu(formData: FormData) {
   revalidatePath(`/agenda/${id}`);
 }
 
+// Check-in de atendimento (sem GPS/tempo real, decisão de escopo já
+// tomada) — janela de 15 min antes a 30 min depois do horário agendado é
+// reforçada pelo trigger guard_booking_status_transition (migration 0030),
+// que também grava iniciado_em com o instante real do servidor (nunca um
+// valor vindo daqui). Retorna { error } em vez de lançar — mesmo motivo de
+// adicionarDisponibilidade: Next.js redacta mensagem de erro lançada por
+// Server Action em produção.
+export async function iniciarAtendimento(formData: FormData): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const professional = await getOwnProfessional(supabase);
+
+  const id = String(formData.get("id") ?? "");
+  const { error } = await supabase
+    .from("bookings")
+    .update({ status: "em_andamento" })
+    .eq("id", id)
+    .eq("professional_id", professional.id);
+  if (error) {
+    if (error.message.includes("Transição de status não permitida")) {
+      return { error: "Só dá pra iniciar de 15 minutos antes até 30 minutos depois do horário agendado." };
+    }
+    return { error: error.message };
+  }
+
+  revalidatePath("/agenda");
+  revalidatePath(`/agenda/${id}`);
+  return { error: null };
+}
+
+// Sem limite de tempo (decisão confirmada: não bloquear por duração
+// anômala) — o trigger grava concluido_em com o instante real do servidor,
+// suficiente pra eventual revisão manual futura se a duração fugir do
+// esperado, sem precisar de bloqueio duro aqui.
+export async function concluirAtendimento(formData: FormData): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const professional = await getOwnProfessional(supabase);
+
+  const id = String(formData.get("id") ?? "");
+  const { error } = await supabase
+    .from("bookings")
+    .update({ status: "concluido" })
+    .eq("id", id)
+    .eq("professional_id", professional.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/agenda");
+  revalidatePath(`/agenda/${id}`);
+  return { error: null };
+}
+
 export async function responderAvaliacao(formData: FormData) {
   const supabase = await createClient();
   await getOwnProfessional(supabase);

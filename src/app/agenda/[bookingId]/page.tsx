@@ -1,16 +1,19 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatDataHora } from "@/lib/format";
+import { formatDataHora, componentesDataHoraSP } from "@/lib/format";
 import { reportarClienteNaoCompareceu, responderAvaliacao } from "../actions";
 import { Avatar } from "@/components/avatar";
 import { BotaoConversar } from "@/components/botao-conversar";
 import { AvaliarClienteForm } from "../avaliar-cliente-form";
+import { IniciarAtendimentoButton, ConcluirAtendimentoButton } from "../checkin-controls";
+import { LinkSeguranca } from "@/components/link-seguranca";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
   STATUS_LIBERA_CHAT,
   podeReportarNoShow,
+  podeIniciarAtendimento,
   elegívelParaAvaliarCliente,
 } from "../shared";
 
@@ -19,6 +22,8 @@ type BookingDetail = {
   data_hora: string;
   status: string;
   valor: number;
+  iniciado_em: string | null;
+  concluido_em: string | null;
   cliente: { id: string; nome: string; telefone: string; bio: string | null; foto_storage_key: string | null } | null;
   service: { tipo: string } | null;
   endereco: {
@@ -56,7 +61,7 @@ export default async function DetalheAtendimentoPage({
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, data_hora, status, valor, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
+      "id, data_hora, status, valor, iniciado_em, concluido_em, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
     )
     .eq("id", bookingId)
     .eq("professional_id", professional.id)
@@ -73,6 +78,7 @@ export default async function DetalheAtendimentoPage({
   }
 
   const reportavel = podeReportarNoShow(booking.data_hora, booking.status);
+  const podeIniciar = podeIniciarAtendimento(booking.data_hora, booking.status);
 
   // Elegibilidade de avaliar o cliente: mesma regra da lista (page.tsx) —
   // nunca busca nem mostra pra um pedido ainda 'solicitado', mesmo
@@ -85,7 +91,7 @@ export default async function DetalheAtendimentoPage({
       .select("id")
       .eq("booking_id", booking.id)
       .maybeSingle();
-    avaliavelCliente = elegívelParaAvaliarCliente(booking.data_hora, booking.status, !!jaAvaliado);
+    avaliavelCliente = elegívelParaAvaliarCliente(booking.concluido_em, booking.status, !!jaAvaliado);
   }
 
   return (
@@ -135,6 +141,20 @@ export default async function DetalheAtendimentoPage({
 
         {STATUS_LIBERA_CHAT.includes(booking.status) && (
           <BotaoConversar bookingId={booking.id} nome={booking.cliente?.nome} className="mt-5" />
+        )}
+
+        {booking.status === "confirmado" && podeIniciar && (
+          <IniciarAtendimentoButton bookingId={booking.id} />
+        )}
+
+        {booking.status === "em_andamento" && (
+          <>
+            <p className="mt-4 text-sm text-foreground/70">
+              Atendimento iniciado às {componentesDataHoraSP(booking.iniciado_em!).hora}
+            </p>
+            <ConcluirAtendimentoButton bookingId={booking.id} />
+            <LinkSeguranca />
+          </>
         )}
 
         {reportavel && (

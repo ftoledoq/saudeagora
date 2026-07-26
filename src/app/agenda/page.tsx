@@ -47,6 +47,7 @@ type BookingRow = {
   data_hora: string;
   status: string;
   valor: number;
+  concluido_em: string | null;
   cliente: {
     id: string;
     nome: string;
@@ -130,7 +131,7 @@ export default async function AgendaPage({
     supabase
       .from("bookings")
       .select(
-        "id, data_hora, status, valor, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
+        "id, data_hora, status, valor, concluido_em, cliente:clients(id, nome, telefone, bio, foto_storage_key), service:services(tipo, duracao_min), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario, resposta_profissional)"
       )
       .eq("professional_id", professional.id)
       .order("data_hora", { ascending: true })
@@ -191,7 +192,11 @@ export default async function AgendaPage({
   const hrefSemanaProxima = `/agenda?semana=${somarDias(semanaInicio, 7)}`;
 
   const pendentes = (bookings ?? []).filter((b) => b.status === "solicitado");
-  const outros = (bookings ?? []).filter((b) => b.status !== "solicitado");
+  // Bucket separado — sem ele, uma sessão em andamento cairia dentro de
+  // "Histórico" ao lado de coisas já concluídas/canceladas, o que não faz
+  // sentido pra algo acontecendo agora.
+  const emAndamento = (bookings ?? []).filter((b) => b.status === "em_andamento");
+  const outros = (bookings ?? []).filter((b) => b.status !== "solicitado" && b.status !== "em_andamento");
 
   // Foto do cliente no pedido pendente — dá contexto pro profissional
   // antes de aceitar, mesmo raciocínio de já mostrar o perfil do
@@ -288,6 +293,28 @@ export default async function AgendaPage({
         ))}
       </div>
 
+      {emAndamento.length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-display text-lg font-semibold">Atendimento em andamento</h2>
+          <div className="mt-3 flex flex-col gap-3">
+            {emAndamento.map((b) => (
+              <TappableCard
+                key={b.id}
+                href={`/agenda/${b.id}`}
+                className="cursor-pointer rounded-xl border border-accent bg-accent/10 px-4 py-3 text-sm transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span>
+                    {b.cliente?.nome} · {formatDataHora(b.data_hora)}
+                  </span>
+                  <span className="font-semibold text-accent">Em andamento</span>
+                </div>
+              </TappableCard>
+            ))}
+          </div>
+        </div>
+      )}
+
       {outros.length > 0 && (
         <div className="mt-10">
           <h2 className="font-display text-lg font-semibold">Histórico</h2>
@@ -295,7 +322,7 @@ export default async function AgendaPage({
             {outros.map((b) => {
               const reportavel = podeReportarNoShow(b.data_hora, b.status);
               const jaAvaliouCliente = bookingsJaAvaliados.has(b.id);
-              const avaliavelCliente = elegívelParaAvaliarCliente(b.data_hora, b.status, jaAvaliouCliente);
+              const avaliavelCliente = elegívelParaAvaliarCliente(b.concluido_em, b.status, jaAvaliouCliente);
 
               return (
                 <TappableCard

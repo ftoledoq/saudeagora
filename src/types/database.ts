@@ -17,7 +17,7 @@ export type ServiceTipo = "personal_trainer" | "massagem" | "pilates";
 export type BookingStatus =
   | "solicitado"
   | "confirmado"
-  | "recusado"
+  | "em_andamento"
   | "concluido"
   | "cancelado_cliente"
   | "cancelado_profissional"
@@ -108,6 +108,8 @@ export interface Booking {
   data_hora: string;
   status: BookingStatus;
   valor: number;
+  iniciado_em: string | null;
+  concluido_em: string | null;
 }
 
 export interface Review {

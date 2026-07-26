@@ -29,6 +29,7 @@ type BookingRow = {
   data_hora: string;
   status: string;
   valor: number;
+  concluido_em: string | null;
   professional_id: string;
   professional: { id: string; nome: string; foto_storage_key: string | null } | null;
   service: { tipo: string } | null;
@@ -69,7 +70,7 @@ export default async function MinhasReservasPage() {
   const { data: bookingsRaw } = await supabase
     .from("bookings")
     .select(
-      "id, data_hora, status, valor, professional_id, service:services(tipo), review:reviews(id, nota, comentario)"
+      "id, data_hora, status, valor, concluido_em, professional_id, service:services(tipo), review:reviews(id, nota, comentario)"
     )
     .eq("cliente_id", client.id)
     .order("data_hora", { ascending: false })
@@ -170,9 +171,9 @@ export default async function MinhasReservasPage() {
         )}
         <div className="mt-3 flex flex-col gap-3">
           {anteriores.map((b) => {
-            const avaliavel = elegívelParaAvaliar(b.data_hora, b.status, !!b.review);
+            const avaliavel = elegívelParaAvaliar(b.concluido_em, b.status, !!b.review);
             const reportavel = podeReportarNoShow(b.data_hora, b.status);
-            const compartilhavel = elegívelParaCompartilhar(b.data_hora, b.status);
+            const compartilhavel = elegívelParaCompartilhar(b.concluido_em, b.status);
 
             return (
               <TappableCard

@@ -11,6 +11,7 @@ export const SERVICE_LABEL: Record<string, string> = {
 export const STATUS_LABEL: Record<string, string> = {
   solicitado: "Solicitado",
   confirmado: "Confirmado",
+  em_andamento: "Em andamento",
   recusado: "Recusado",
   concluido: "Concluído",
   cancelado_cliente: "Cancelado (cliente)",
@@ -20,9 +21,11 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 // Mesmo conjunto de status que libera o chat na RLS (booking_chat_liberado,
-// migration 0017).
+// migration 0017/0030) — 'em_andamento' também libera, sessão em curso
+// precisa continuar podendo trocar mensagem.
 export const STATUS_LIBERA_CHAT = [
   "confirmado",
+  "em_andamento",
   "concluido",
   "no_show_cliente",
   "no_show_profissional",
@@ -30,23 +33,51 @@ export const STATUS_LIBERA_CHAT = [
 
 const JANELA_NO_SHOW_MIN = 30;
 
+// Independente de check-in de propósito — continua contando só a partir do
+// horário AGENDADO (data_hora), nunca de iniciado_em. Confirmado
+// explicitamente antes de implementar check-in: uma vez que o profissional
+// faz check-in (status vira 'em_andamento'), esta função já retorna false
+// de qualquer forma (só aceita status === "confirmado"), então no-show
+// nunca fica disponível depois do check-in — não por uma regra nova aqui,
+// mas porque o próprio guard_booking_status_transition (migration 0030)
+// não tem nenhuma transição de 'em_andamento' pra 'no_show_*'.
 export function podeReportarNoShow(dataHoraIso: string, status: string): boolean {
   if (status !== "confirmado") return false;
   const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
   return minutosDesde >= 0 && minutosDesde <= JANELA_NO_SHOW_MIN;
 }
 
+// Janela de check-in: 15 min antes até 30 min depois do horário agendado —
+// fixa nesta fase, não configurável por profissional (confirmado
+// explicitamente). Formato diferente da janela de no-show (que só conta
+// DEPOIS do horário) — check-in cedo é o caso comum (profissional chega
+// adiantado), por isso a folga antes do horário.
+const JANELA_CHECKIN_ANTES_MIN = 15;
+const JANELA_CHECKIN_DEPOIS_MIN = 30;
+
+export function podeIniciarAtendimento(dataHoraIso: string, status: string): boolean {
+  if (status !== "confirmado") return false;
+  const minutosAteAgendado = (new Date(dataHoraIso).getTime() - Date.now()) / 60000;
+  return minutosAteAgendado <= JANELA_CHECKIN_ANTES_MIN && minutosAteAgendado >= -JANELA_CHECKIN_DEPOIS_MIN;
+}
+
 // Mesma janela da avaliação do profissional (src/app/minhas-reservas/shared.ts)
-// — espelhada aqui pro lado do profissional avaliar o cliente.
+// — espelhada aqui pro lado do profissional avaliar o cliente. Gatilho
+// agora é a CONCLUSÃO real (concluido_em, gravada pelo trigger no
+// check-out), não mais o horário agendado — desde que existe check-in de
+// verdade, "sessão realmente aconteceu" deixou de ser uma estimativa.
+// concluido_em nunca é futuro (é sempre now() no momento da transição),
+// por isso não precisa mais checar se "já passou" como a versão anterior
+// baseada em data_hora precisava.
 const JANELA_AVALIACAO_DIAS = 3;
 
 export function elegívelParaAvaliarCliente(
-  dataHoraIso: string,
+  concluidoEmIso: string | null,
   status: string,
   jaAvaliado: boolean
 ): boolean {
-  if (status !== "confirmado" || jaAvaliado) return false;
-  const minutosDesde = (Date.now() - new Date(dataHoraIso).getTime()) / 60000;
+  if (status !== "concluido" || jaAvaliado || !concluidoEmIso) return false;
+  const minutosDesde = (Date.now() - new Date(concluidoEmIso).getTime()) / 60000;
   return minutosDesde >= 0 && minutosDesde <= JANELA_AVALIACAO_DIAS * 24 * 60;
 }
 

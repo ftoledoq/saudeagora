@@ -1,12 +1,13 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatDataHora } from "@/lib/format";
+import { formatDataHora, componentesDataHoraSP } from "@/lib/format";
 import { reportarProfissionalNaoCompareceu } from "../actions";
 import { AvaliarForm } from "../avaliar-form";
 import { ShareCardButton } from "@/components/share-card-button";
 import { Avatar } from "@/components/avatar";
 import { BotaoConversar } from "@/components/botao-conversar";
+import { LinkSeguranca } from "@/components/link-seguranca";
 import {
   SERVICE_LABEL,
   STATUS_LABEL,
@@ -22,6 +23,8 @@ type BookingDetail = {
   data_hora: string;
   status: string;
   valor: number;
+  iniciado_em: string | null;
+  concluido_em: string | null;
   professional_id: string;
   service: { tipo: string } | null;
   endereco: {
@@ -57,7 +60,7 @@ export default async function DetalheReservaPage({
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, data_hora, status, valor, professional_id, service:services(tipo), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario)"
+      "id, data_hora, status, valor, iniciado_em, concluido_em, professional_id, service:services(tipo), endereco:addresses(rua, bairro:bairros(nome, cidade, estado)), review:reviews(id, nota, comentario)"
     )
     .eq("id", bookingId)
     .eq("cliente_id", client.id)
@@ -81,9 +84,9 @@ export default async function DetalheReservaPage({
     fotoUrl = data?.signedUrl ?? null;
   }
 
-  const avaliavel = elegívelParaAvaliar(booking.data_hora, booking.status, !!booking.review);
+  const avaliavel = elegívelParaAvaliar(booking.concluido_em, booking.status, !!booking.review);
   const reportavel = podeReportarNoShow(booking.data_hora, booking.status);
-  const compartilhavel = elegívelParaCompartilhar(booking.data_hora, booking.status);
+  const compartilhavel = elegívelParaCompartilhar(booking.concluido_em, booking.status);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
@@ -125,6 +128,15 @@ export default async function DetalheReservaPage({
 
         {STATUS_LIBERA_CHAT.includes(booking.status) && (
           <BotaoConversar bookingId={booking.id} nome={nomeProfissional} className="mt-5" />
+        )}
+
+        {booking.status === "em_andamento" && (
+          <>
+            <p className="mt-4 text-sm text-foreground/70">
+              Atendimento em andamento desde {componentesDataHoraSP(booking.iniciado_em!).hora}
+            </p>
+            <LinkSeguranca />
+          </>
         )}
 
         {reportavel && (
