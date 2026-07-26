@@ -30,7 +30,7 @@ const NOME_DIA_SEMANA = [
   "domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado",
 ];
 
-type Servico = { id: string; tipo: string; duracao_min: number };
+type Servico = { id: string; tipo: string; duracao_min: number; ativo: boolean };
 
 export type CelulaOcupada = {
   id: string;
@@ -132,6 +132,14 @@ export function GradeSemanal({
   const cobertasSet = new Set(celulasCobertas);
   const indicePorServico = new Map(servicos.map((s, i) => [s.id, i]));
   const horas = Array.from({ length: horaMax - horaMin + 1 }, (_, i) => horaMin + i);
+  // Serviço desativado (ver /perfil) some dos seletores de "escolher
+  // serviço" — não faz sentido criar disponibilidade nova pra algo que o
+  // profissional acabou de dizer que não quer mais atender. `servicos`
+  // continua com a lista INTEIRA (ativos + inativos): uma célula já
+  // reservada de antes pode referenciar um serviço hoje inativo, e o
+  // rótulo/cor dela ainda precisa resolver certo (ver painel
+  // "ver_reservado" e a legenda logo abaixo).
+  const servicosAtivos = servicos.filter((s) => s.ativo);
 
   function fechar() {
     setSelecao({ modo: "idle" });
@@ -146,10 +154,14 @@ export function GradeSemanal({
   // router.refresh() explicitamente depois de toda mutação.
   function tocarCelulaVazia(data: string, hora: string) {
     setErro(null);
-    if (servicos.length > 1) {
+    if (servicosAtivos.length === 0) {
+      setErro("Você não tem nenhum serviço ativo — reative um serviço em Perfil antes de marcar disponibilidade.");
+      return;
+    }
+    if (servicosAtivos.length > 1) {
       setSelecao({ modo: "escolher_servico", data, hora });
     } else {
-      setSelecao({ modo: "confirmar_repeticao", data, hora, serviceId: servicos[0].id });
+      setSelecao({ modo: "confirmar_repeticao", data, hora, serviceId: servicosAtivos[0].id });
     }
   }
 
@@ -289,10 +301,14 @@ export function GradeSemanal({
 
   function abrirMarcarTudo() {
     setErro(null);
-    if (servicos.length > 1) {
+    if (servicosAtivos.length === 0) {
+      setErro("Você não tem nenhum serviço ativo — reative um serviço em Perfil antes de marcar disponibilidade.");
+      return;
+    }
+    if (servicosAtivos.length > 1) {
       setSelecao({ modo: "bulk_escolher_servico" });
     } else {
-      setSelecao({ modo: "bulk_confirmar", serviceId: servicos[0].id });
+      setSelecao({ modo: "bulk_confirmar", serviceId: servicosAtivos[0].id });
     }
   }
 
@@ -452,11 +468,17 @@ export function GradeSemanal({
       {/* Legenda sempre visível — cobre os três estados possíveis na
           grade (serviço(s) livre(s) + reservado), não só quando há mais
           de um serviço. Antes só aparecia com 2+ serviços, deixando
-          "Reservado" sem nenhuma explicação visual pra quem tem um só. */}
+          "Reservado" sem nenhuma explicação visual pra quem tem um só.
+          Só serviço ATIVO aparece aqui — um desativado não tem mais
+          célula livre (removida quando desativou, ver actions.ts), então
+          nenhuma cor precisa de legenda pra ele. A cor vem de
+          indicePorServico (posição no array INTEIRO, não o índice deste
+          .filter) — senão a cor da legenda desalinha da cor da célula
+          assim que um serviço no meio da lista fica inativo. */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-3">
-          {servicos.map((s, i) => {
-            const cor = corServico(i);
+          {servicosAtivos.map((s) => {
+            const cor = corServico(indicePorServico.get(s.id) ?? 0);
             return (
               <span key={s.id} className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
                 <span className={`h-2.5 w-2.5 rounded-full ${cor.dot}`} />
@@ -578,7 +600,7 @@ export function GradeSemanal({
       {selecao.modo === "escolher_servico" && (
         <PainelInferior titulo="Escolha o serviço" onFechar={fechar}>
           <div className="flex flex-wrap gap-2">
-            {servicos.map((s) => (
+            {servicosAtivos.map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -633,7 +655,7 @@ export function GradeSemanal({
       {selecao.modo === "bulk_escolher_servico" && (
         <PainelInferior titulo="Marcar semana inteira — escolha o serviço" onFechar={fechar}>
           <div className="flex flex-wrap gap-2">
-            {servicos.map((s) => (
+            {servicosAtivos.map((s) => (
               <button
                 key={s.id}
                 type="button"

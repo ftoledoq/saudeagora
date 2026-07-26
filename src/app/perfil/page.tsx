@@ -79,14 +79,30 @@ export default async function PerfilPage() {
     mediaPropria = data ?? { media: null, total: 0 };
   }
 
-  let servicos: { id: string; tipo: string; preco: number; duracao_min: number }[] = [];
+  let servicos: { id: string; tipo: string; preco: number; duracao_min: number; ativo: boolean }[] = [];
+  // Quantos agendamentos pendentes/confirmados futuros cada serviço já tem
+  // — mostrado no aviso de "Desativar" (decisão confirmada: desativar não
+  // bloqueia nem cancela nada, só avisa o que já está marcado).
+  let futurosPorServico: Record<string, number> = {};
   if (professional) {
     const { data } = await supabase
       .from("services")
-      .select("id, tipo, preco, duracao_min")
+      .select("id, tipo, preco, duracao_min, ativo")
       .eq("professional_id", professional.id)
       .order("created_at");
     servicos = data ?? [];
+
+    if (servicos.length > 0) {
+      const { data: futuros } = await supabase
+        .from("bookings")
+        .select("service_id")
+        .eq("professional_id", professional.id)
+        .in("status", ["solicitado", "confirmado"])
+        .gte("data_hora", new Date().toISOString());
+      for (const b of futuros ?? []) {
+        futurosPorServico[b.service_id] = (futurosPorServico[b.service_id] ?? 0) + 1;
+      }
+    }
   }
 
   return (
@@ -164,7 +180,7 @@ export default async function PerfilPage() {
             {servicos.length === 0 ? (
               <p className="text-sm text-foreground/60">Nenhum serviço cadastrado.</p>
             ) : (
-              <ListaServicos servicos={servicos} />
+              <ListaServicos servicos={servicos} futurosPorServico={futurosPorServico} />
             )}
             <AdicionarServicoForm />
           </div>

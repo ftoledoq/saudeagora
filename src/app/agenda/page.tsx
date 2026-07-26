@@ -140,7 +140,7 @@ export default async function AgendaPage({
     // sempre suportou múltiplos serviços com durações diferentes.
     supabase
       .from("services")
-      .select("id, tipo, duracao_min")
+      .select("id, tipo, duracao_min, ativo")
       .eq("professional_id", professional.id)
       .order("created_at"),
     supabase
@@ -380,7 +380,7 @@ export default async function AgendaPage({
 
         <div className="mt-4">
           <GradeSemanal
-            servicos={(servicos ?? []).map((s) => ({ id: s.id, tipo: s.tipo, duracao_min: s.duracao_min }))}
+            servicos={(servicos ?? []).map((s) => ({ id: s.id, tipo: s.tipo, duracao_min: s.duracao_min, ativo: s.ativo }))}
             diasIso={diasIso}
             horaMin={horaMin}
             horaMax={horaMax}

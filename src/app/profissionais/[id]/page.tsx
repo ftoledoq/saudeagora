@@ -64,6 +64,7 @@ export default async function PerfilProfissionalPage({
     .from("services")
     .select("tipo, preco, duracao_min, descricao")
     .eq("professional_id", professional.id)
+    .eq("ativo", true)
     .returns<Servico[]>();
 
   let fotoUrl: string | null = null;

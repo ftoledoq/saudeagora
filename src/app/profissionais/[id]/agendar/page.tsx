@@ -48,7 +48,8 @@ export default async function AgendarPage({
       supabase
         .from("services")
         .select("id, tipo, preco, duracao_min")
-        .eq("professional_id", professional.id),
+        .eq("professional_id", professional.id)
+        .eq("ativo", true),
       supabase
         .from("availability")
         .select("*")

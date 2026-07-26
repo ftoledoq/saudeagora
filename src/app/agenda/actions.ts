@@ -57,6 +57,7 @@ export async function adicionarDisponibilidade(formData: FormData): Promise<{ er
     .select("duracao_min")
     .eq("id", serviceId)
     .eq("professional_id", professionalId)
+    .eq("ativo", true)
     .maybeSingle();
   if (!service) return { error: "Serviço inválido." };
 
@@ -178,6 +179,7 @@ export async function salvarPadraoRecorrente(formData: FormData): Promise<{ erro
     .select("duracao_min")
     .eq("id", serviceId)
     .eq("professional_id", professionalId)
+    .eq("ativo", true)
     .maybeSingle();
   if (!service) return { error: "Serviço inválido." };
 

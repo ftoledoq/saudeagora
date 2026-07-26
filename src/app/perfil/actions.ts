@@ -95,6 +95,81 @@ export async function editarServico(formData: FormData): Promise<{ error: string
   return { error: null };
 }
 
+// Pausa reversível por serviço (migration 0029), mesma filosofia de
+// desativarConta — nunca apaga cadastro nem histórico. Confirmado com o
+// founder: permite desativar mesmo com agendamento pendente/confirmado
+// futuro desse serviço (a tela avisa antes, com a contagem real — ver
+// perfil/page.tsx), só não deixa esse serviço aceitar pedido novo daqui
+// pra frente.
+export async function desativarServico(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: professional } = await supabase
+    .from("professionals")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!professional) redirect("/perfil");
+
+  const id = String(formData.get("id") ?? "");
+
+  await supabase
+    .from("services")
+    .update({ ativo: false })
+    .eq("id", id)
+    .eq("professional_id", professional.id);
+
+  // "Não quero mais atender" precisa parar de verdade, não só sumir da
+  // busca: sem isso, o padrão recorrente continuaria gerando horário novo
+  // toda semana pra um serviço que o profissional acabou de desligar.
+  // Nunca toca em 'bloqueado' — agendamento já confirmado/pendente
+  // continua de pé (decisão confirmada acima), só o horário 'livre' (ainda
+  // não reservado) some, junto com a regra que o gerava.
+  await supabase
+    .from("recurring_availability")
+    .delete()
+    .eq("professional_id", professional.id)
+    .eq("service_id", id);
+  await supabase
+    .from("availability")
+    .delete()
+    .eq("professional_id", professional.id)
+    .eq("service_id", id)
+    .eq("status", "livre");
+
+  revalidatePath("/perfil");
+  revalidatePath("/agenda");
+}
+
+export async function reativarServico(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: professional } = await supabase
+    .from("professionals")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!professional) redirect("/perfil");
+
+  const id = String(formData.get("id") ?? "");
+  await supabase
+    .from("services")
+    .update({ ativo: true })
+    .eq("id", id)
+    .eq("professional_id", professional.id);
+
+  revalidatePath("/perfil");
+  revalidatePath("/agenda");
+}
+
 // Pausa reversível (migration 0022) — some da busca (profissional), mas
 // login continua funcionando normalmente e nenhum dado é tocado. Um clique,
 // sem confirmação extra: não é destrutivo, não há motivo pra fricção.

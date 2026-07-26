@@ -101,7 +101,11 @@ export default async function BuscarPage({
   const [{ data: bairros }, { data: profissionais }, { data: services }] = await Promise.all([
     supabase.from("bairros").select("*").order("cidade").order("nome").returns<Bairro[]>(),
     supabase.from("professionais_publicos").select("*").returns<ProfessionalPublico[]>(),
-    supabase.from("services").select("professional_id, tipo, preco, duracao_min, descricao").returns<Servico[]>(),
+    supabase
+      .from("services")
+      .select("professional_id, tipo, preco, duracao_min, descricao")
+      .eq("ativo", true)
+      .returns<Servico[]>(),
   ]);
 
   const servicosPorProfissional = new Map<string, Servico[]>();
