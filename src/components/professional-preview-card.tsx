@@ -19,9 +19,14 @@ export type ProfessionalPreviewCardData = {
 export function ProfessionalPreviewCard({
   card,
   mostrarVerificado = false,
+  mostrarPreco = true,
 }: {
   card: ProfessionalPreviewCardData;
   mostrarVerificado?: boolean;
+  // A landing não mostra preço (decisão de posicionamento: valoriza o
+  // serviço, não compete por preço) — só a Busca e o perfil do
+  // profissional, onde a pessoa já está comparando de forma consciente.
+  mostrarPreco?: boolean;
 }) {
   return (
     <Link
@@ -42,7 +47,7 @@ export function ProfessionalPreviewCard({
       )}
       {card.avaliacaoLabel && <p className="mt-0.5 text-xs text-primary">{card.avaliacaoLabel}</p>}
       {card.distanciaLabel && <p className="mt-1 text-xs text-foreground/60">{card.distanciaLabel}</p>}
-      <p className="mt-1 text-sm font-semibold text-primary">R$ {card.preco}</p>
+      {mostrarPreco && <p className="mt-1 text-sm font-semibold text-primary">R$ {card.preco}</p>}
     </Link>
   );
 }

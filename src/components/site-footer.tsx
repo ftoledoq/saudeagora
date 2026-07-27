@@ -17,7 +17,7 @@ export function SiteFooter() {
         <div>
           <p className="font-display text-base font-semibold text-foreground">SaúdeAgora</p>
           <p className="mt-2 text-foreground/60">
-            Personal trainer, massagem e pilates verificados perto de você.
+            SaúdeAgora — bem-estar de verdade, perto de você.
           </p>
         </div>
         <div>
@@ -37,8 +37,7 @@ export function SiteFooter() {
         <div>
           <p className="font-semibold text-foreground/80">Sobre esta fase</p>
           <p className="mt-2 text-foreground/60">
-            Estamos começando com um grupo inicial de profissionais e clientes
-            nesta região — algumas funcionalidades ainda estão a caminho.
+            Estamos começando pelo Rio de Janeiro, um bairro por vez.
           </p>
         </div>
       </div>

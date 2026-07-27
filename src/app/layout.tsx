@@ -19,15 +19,41 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+// metadataBase é o que deixa a imagem de Open Graph abaixo resolver como
+// URL absoluta (obrigatório pra crawler de WhatsApp/Instagram/LinkedIn
+// buscar a imagem — path relativo sozinho não funciona fora do navegador).
+const SITE_URL = "https://saudeagora.vercel.app";
+
+const DESCRICAO = "Personal trainer, massagem e pilates com profissionais verificados no Rio de Janeiro.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "SaúdeAgora — Bem-estar perto de você",
-  description:
-    "Encontre e agende personal trainer, massagem e pilates com profissionais verificados na sua região.",
+  description: DESCRICAO,
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "SaúdeAgora",
+  },
+  // Preview de link (WhatsApp, Instagram, LinkedIn) — sem isso configurado,
+  // o compartilhamento cai num preview quebrado/genérico, o que prejudica
+  // a credibilidade antes mesmo da pessoa clicar. og-image.jpg é a hero.jpg
+  // recortada em 1200x630 (ver scripts/process-images.mjs).
+  openGraph: {
+    title: "SaúdeAgora — Bem-estar perto de você",
+    description: DESCRICAO,
+    url: SITE_URL,
+    siteName: "SaúdeAgora",
+    locale: "pt_BR",
+    type: "website",
+    images: [{ url: "/images/og-image.jpg", width: 1200, height: 630, alt: "SaúdeAgora" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SaúdeAgora — Bem-estar perto de você",
+    description: DESCRICAO,
+    images: ["/images/og-image.jpg"],
   },
 };
 

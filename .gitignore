@@ -43,6 +43,11 @@ yarn-error.log*
 # credenciais de contas de teste persistentes (is_test_data) — nunca commitar
 TESTE_CREDENCIAIS.md
 
+# fotos originais não processadas (5-8MB cada, na verdade PNG salvo com
+# extensão .jpg) — só as versões recortadas/comprimidas em public/images/
+# são usadas pelo app e vão pro git. Reprocessar com scripts/process-images.mjs.
+/images/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
