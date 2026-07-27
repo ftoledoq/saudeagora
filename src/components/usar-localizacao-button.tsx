@@ -19,6 +19,22 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Raio de cobertura plausível a partir do bairro fixo mais próximo — cobre
+// a extensão real de uma região metropolitana (do bairro mais periférico
+// ao mais central, ex. Recreio dos Bandeirantes ao Centro do Rio) sem
+// "aceitar" uma cidade vizinha inteira como se fosse cobertura de verdade.
+const RAIO_COBERTURA_KM = 60;
+
+function preposicaoCidade(cidade: string): string {
+  return cidade === "Rio de Janeiro" ? "no" : "em";
+}
+
+function listarCidadesAtendidas(cidades: string[]): string {
+  const partes = cidades.map((c) => `${preposicaoCidade(c)} ${c}`);
+  if (partes.length <= 1) return partes[0] ?? "";
+  return `${partes.slice(0, -1).join(", ")} e ${partes[partes.length - 1]}`;
+}
+
 // Antes disso, o bairro (e a cidade) eram decididos por geocodificação
 // reversa (Nominatim) + comparação de NOME de bairro/cidade contra a nossa
 // tabela fixa — bug real reportado: alguém fisicamente em São Paulo
@@ -31,11 +47,35 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
 // pega o bairro fixo mais próximo em linha reta, de qualquer cidade —
 // mesma lógica de aproximação por centro de bairro já usada no resto do
 // app, sem o Nominatim entrar na decisão de todo.
+//
+// Bug real relatado (auditoria nova): isso não tinha NENHUM teto de
+// distância — alguém em Indaiatuba (a ~100km de São Paulo) caía
+// silenciosamente no mapa de São Paulo, sem aviso nenhum, sem forma de
+// saber se era bug ou falta de cobertura mesmo. RAIO_COBERTURA_KM
+// resolve isso: acima do raio, mostra um estado explícito de "fora de
+// cobertura" em vez de trocar de cidade sem avisar. O nome da cidade
+// detectada nessa mensagem vem de uma chamada de geocodificação reversa
+// (Nominatim) só pra EXIBIÇÃO — nunca decide bairro/cidade (esse
+// continua sendo só a coordenada), então a mesma razão que tirou o
+// Nominatim da decisão não se aplica aqui: se a chamada falhar ou
+// devolver algo estranho, a mensagem cai num texto genérico, nunca break
+// a funcionalidade.
 export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [estado, setEstado] = useState<"ocioso" | "buscando" | "erro">("ocioso");
+  const [estado, setEstado] = useState<"ocioso" | "buscando" | "erro" | "fora_de_cobertura">("ocioso");
   const [mensagemErro, setMensagemErro] = useState<string | null>(null);
+  const [cidadeDetectada, setCidadeDetectada] = useState<string | null>(null);
+
+  const cidadesAtendidas = [...new Set(bairros.map((b) => b.cidade))];
+
+  function irParaCidade(cidade: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("cidade", cidade);
+    params.delete("bairro");
+    router.push(`/buscar?${params.toString()}`);
+    setEstado("ocioso");
+  }
 
   function usarLocalizacao() {
     if (!("geolocation" in navigator)) {
@@ -53,7 +93,7 @@ export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] 
     setMensagemErro(null);
 
     navigator.geolocation.getCurrentPosition(
-      (posicao) => {
+      async (posicao) => {
         const { latitude, longitude } = posicao.coords;
 
         let maisProximo = bairros[0];
@@ -64,6 +104,26 @@ export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] 
             menorDistancia = distancia;
             maisProximo = b;
           }
+        }
+
+        if (menorDistancia > RAIO_COBERTURA_KM) {
+          setEstado("fora_de_cobertura");
+          setCidadeDetectada(null);
+          try {
+            const resposta = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=10`,
+              { headers: { "Accept-Language": "pt-BR" } }
+            );
+            const dados = await resposta.json();
+            const nomeCidade: string | undefined =
+              dados?.address?.city ?? dados?.address?.town ?? dados?.address?.municipality;
+            if (nomeCidade) setCidadeDetectada(nomeCidade);
+          } catch {
+            // Sem nome de cidade, a mensagem cai pra formulação genérica —
+            // nunca trava nem muda o resultado (essa chamada é só de
+            // exibição, ver comentário acima).
+          }
+          return;
         }
 
         const params = new URLSearchParams(searchParams.toString());
@@ -95,6 +155,43 @@ export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] 
         {estado === "buscando" ? "Localizando..." : "Usar minha localização"}
       </button>
       {mensagemErro && <p className="text-xs text-error">{mensagemErro}</p>}
+
+      {estado === "fora_de_cobertura" && (
+        <div className="fixed inset-0 z-[1000]">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setEstado("ocioso")} />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-border bg-white p-5 shadow-[0_-4px_16px_rgba(0,0,0,0.12)]">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="font-display text-base font-semibold">
+                Ainda não chegamos {cidadeDetectada ? `em ${cidadeDetectada}` : "na sua região"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEstado("ocioso")}
+                aria-label="Fechar"
+                className="text-foreground/40 hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-foreground/70">
+              Por enquanto estamos {listarCidadesAtendidas(cidadesAtendidas)}. Pode explorar mesmo assim, se
+              quiser.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {cidadesAtendidas.map((cidade) => (
+                <button
+                  key={cidade}
+                  type="button"
+                  onClick={() => irParaCidade(cidade)}
+                  className="rounded-full border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
+                >
+                  Ver {cidade}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
