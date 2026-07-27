@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { registrarInteresseRegiao, type RegistrarInteresseState } from "@/app/buscar/actions";
 
 type BairroParaMatch = { id: string; nome: string; cidade: string; latitude: number; longitude: number };
 
@@ -35,6 +36,8 @@ function listarCidadesAtendidas(cidades: string[]): string {
   return `${partes.slice(0, -1).join(", ")} e ${partes[partes.length - 1]}`;
 }
 
+const estadoInicialInteresse: RegistrarInteresseState = { error: null, ok: false };
+
 // Antes disso, o bairro (e a cidade) eram decididos por geocodificação
 // reversa (Nominatim) + comparação de NOME de bairro/cidade contra a nossa
 // tabela fixa — bug real reportado: alguém fisicamente em São Paulo
@@ -66,6 +69,10 @@ export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] 
   const [estado, setEstado] = useState<"ocioso" | "buscando" | "erro" | "fora_de_cobertura">("ocioso");
   const [mensagemErro, setMensagemErro] = useState<string | null>(null);
   const [cidadeDetectada, setCidadeDetectada] = useState<string | null>(null);
+  const [interesseState, interesseAction, interessePending] = useActionState(
+    registrarInteresseRegiao,
+    estadoInicialInteresse
+  );
 
   const cidadesAtendidas = [...new Set(bairros.map((b) => b.cidade))];
 
@@ -189,6 +196,42 @@ export function UsarLocalizacaoButton({ bairros }: { bairros: BairroParaMatch[] 
                 </button>
               ))}
             </div>
+
+            {/* Transforma a frustração de "fora de cobertura" em dado real
+                de demanda por região — nunca obrigatório, sempre some se a
+                pessoa já mandou (interesseState.ok). */}
+            {interesseState.ok ? (
+              <p className="mt-4 text-sm text-primary">
+                Combinado — avisamos assim que chegarmos {cidadeDetectada ? `em ${cidadeDetectada}` : "na sua região"}.
+              </p>
+            ) : (
+              <form action={interesseAction} className="mt-4 border-t border-border pt-4">
+                <input type="hidden" name="cidade" value={cidadeDetectada ?? "não identificada"} />
+                <label htmlFor="interesse-email" className="text-sm text-foreground/70">
+                  Quer ser avisado quando chegarmos {cidadeDetectada ? `em ${cidadeDetectada}` : "na sua região"}?
+                </label>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    id="interesse-email"
+                    name="email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    required
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    disabled={interessePending}
+                    className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {interessePending ? "..." : "Avisar"}
+                  </button>
+                </div>
+                {interesseState.error && (
+                  <p className="mt-1.5 text-xs text-error">{interesseState.error}</p>
+                )}
+              </form>
+            )}
           </div>
         </div>
       )}
