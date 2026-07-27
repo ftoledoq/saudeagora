@@ -202,23 +202,42 @@ export function CadastroForm({ bairros }: { bairros: Bairro[] }) {
             className={inputClass}
           />
         </Field>
-        {tipo === "personal_trainer" && (
-          <>
-            <Field label="Comprovante de registro no CREF" htmlFor="cref">
-              <input
-                id="cref"
-                name="cref"
-                type="file"
-                accept="image/*,application/pdf"
-                required
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Validade do CREF" htmlFor="cref_validade">
-              <input id="cref_validade" name="cref_validade" type="date" required className={inputClass} />
-            </Field>
-          </>
-        )}
+        {/* Antes só aparecia pra personal trainer (único com conselho
+            federal específico, o CREF) — massoterapia não tem conselho
+            equivalente, então o upload agora aceita também certificação
+            de formação, pra qualquer categoria comprovar sua
+            qualificação "quando aplicável à sua área" (mesma linha da
+            seção de confiança da landing). Só continua OBRIGATÓRIO pra
+            personal trainer — CREF é o único caso com exigência legal
+            de registro, as outras categorias ficam livres pra enviar. */}
+        <Field label="Comprovante de registro ou certificação profissional" htmlFor="cref">
+          <input
+            id="cref"
+            name="cref"
+            type="file"
+            accept="image/*,application/pdf"
+            required={tipo === "personal_trainer"}
+            className={inputClass}
+          />
+          {tipo !== "personal_trainer" && (
+            <p className="text-xs text-foreground/50">
+              Opcional — certificado de formação, registro em conselho ou outro comprovante da sua
+              qualificação.
+            </p>
+          )}
+        </Field>
+        <Field label="Validade do registro/certificação profissional" htmlFor="cref_validade">
+          <input
+            id="cref_validade"
+            name="cref_validade"
+            type="date"
+            required={tipo === "personal_trainer"}
+            className={inputClass}
+          />
+          {tipo !== "personal_trainer" && (
+            <p className="text-xs text-foreground/50">Deixe em branco se a certificação não tiver validade.</p>
+          )}
+        </Field>
       </Section>
 
       <label className="flex items-start gap-2 text-sm text-foreground/80">

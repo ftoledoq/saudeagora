@@ -36,7 +36,7 @@ export function SiteHeader({ autenticado }: { autenticado: boolean }) {
             aparecia pra ela também, mesmo bug de fundo do TabBarClient. */}
         {!autenticado && (
           <Link
-            href="/cadastro"
+            href="/sou-profissional"
             className="rounded-full border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
           >
             Sou profissional

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { avisarDesativacaoConta } from "@/lib/email";
 
 export async function sair() {
   const supabase = await createClient();
@@ -171,19 +172,31 @@ export async function reativarServico(formData: FormData) {
 }
 
 // Pausa reversível (migration 0022) — some da busca (profissional), mas
-// login continua funcionando normalmente e nenhum dado é tocado. Um clique,
-// sem confirmação extra: não é destrutivo, não há motivo pra fricção.
-export async function desativarConta() {
+// login continua funcionando normalmente e nenhum dado é tocado. Confirmação
+// é um painel próprio (DesativarContaForm), não bloqueio nem passo extra —
+// só troca o window.confirm() nativo por um onde dá pra deixar "continuar
+// ativo" mais proeminente que "desativar" e oferecer uma justificativa
+// opcional, sem tornar nenhuma das duas coisas obrigatória.
+export async function desativarConta(formData: FormData) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const motivo = String(formData.get("motivo") ?? "").trim();
+  const nome = String(formData.get("nome") ?? "").trim() || user.email || "Usuário";
+
   await Promise.all([
     supabase.from("professionals").update({ ativo: false }).eq("user_id", user.id),
     supabase.from("clients").update({ ativo: false }).eq("user_id", user.id),
   ]);
+
+  // Best-effort, nunca bloqueia a desativação em si — só repassa o
+  // feedback opcional pro e-mail de suporte, se a pessoa escreveu algo.
+  if (motivo && user.email) {
+    await avisarDesativacaoConta({ nome, email: user.email, motivo });
+  }
 
   redirect("/perfil");
 }

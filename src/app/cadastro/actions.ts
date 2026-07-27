@@ -46,7 +46,8 @@ export async function cadastrarProfissional(
 
   const identidadeFile = formData.get("identidade") as File | null;
   const crefFile = formData.get("cref") as File | null;
-  const crefValidade = str(formData, "cref_validade");
+  const temCref = !!crefFile && crefFile.size > 0;
+  const crefValidade = str(formData, "cref_validade") || null;
   const aceiteTermos = formData.get("aceite_termos") === "on";
 
   // Validação — nunca confiar só no que o formulário no navegador já checou.
@@ -68,10 +69,12 @@ export async function cadastrarProfissional(
   }
   if (!identidadeFile || identidadeFile.size === 0)
     return { error: "Envie o documento de identidade." };
+  // Só personal trainer tem exigência legal de registro (CREF) — as
+  // outras categorias podem enviar comprovante de qualificação, mas não
+  // são obrigadas (ver Field no formulário).
   if (tipo === "personal_trainer") {
-    if (!crefFile || crefFile.size === 0)
-      return { error: "Personal trainer precisa enviar o comprovante de CREF." };
-    if (!crefValidade) return { error: "Informe a validade do CREF." };
+    if (!temCref) return { error: "Personal trainer precisa enviar o comprovante de registro profissional." };
+    if (!crefValidade) return { error: "Informe a validade do registro profissional." };
   }
 
   const supabase = await createClient();
@@ -170,13 +173,20 @@ export async function cadastrarProfissional(
   if (identidadeDocError)
     return { error: `Não foi possível registrar o documento de identidade: ${identidadeDocError.message}` };
 
-  if (tipo === "personal_trainer" && crefFile) {
-    const crefPath = `${user.id}/cref-${Date.now()}.${fileExtension(crefFile)}`;
+  // tipo do documento continua "cref" no banco independente da categoria
+  // — é o mesmo mecanismo de reverificação por validade (cref_valido(),
+  // migration 0003) que já lida certo com "sem comprovante nenhum" (não
+  // bloqueia visibilidade pública, ver comentário lá), só passa a
+  // guardar qualificação de qualquer categoria, não só CREF de personal
+  // trainer. Renomear o valor do enum seria uma migration de schema à
+  // toa pra uma mudança que é só de rótulo na tela.
+  if (temCref) {
+    const crefPath = `${user.id}/cref-${Date.now()}.${fileExtension(crefFile!)}`;
     const { error: crefUploadError } = await supabase.storage
       .from("professional-documents")
-      .upload(crefPath, crefFile, { contentType: crefFile.type });
+      .upload(crefPath, crefFile!, { contentType: crefFile!.type });
     if (crefUploadError)
-      return { error: `Não foi possível enviar o comprovante de CREF: ${crefUploadError.message}` };
+      return { error: `Não foi possível enviar o comprovante de registro: ${crefUploadError.message}` };
 
     const { error: crefDocError } = await supabase.from("professional_documents").insert({
       professional_id: professional.id,
@@ -185,7 +195,7 @@ export async function cadastrarProfissional(
       validade: crefValidade,
     });
     if (crefDocError)
-      return { error: `Não foi possível registrar o comprovante de CREF: ${crefDocError.message}` };
+      return { error: `Não foi possível registrar o comprovante de registro: ${crefDocError.message}` };
   }
 
   redirect("/cadastro/recebido");

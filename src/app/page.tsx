@@ -41,8 +41,9 @@ const CONFIANCA = [
     ),
   },
   {
-    titulo: "CREF conferido",
-    descricao: "Personal trainer só entra com registro profissional validado. E revalidado quando vence.",
+    titulo: "Registro profissional conferido",
+    descricao:
+      "Cada profissional comprova a certificação ou registro do seu órgão regulador, quando aplicável à sua área.",
     icone: (
       <svg {...iconProps}>
         <circle cx="12" cy="9" r="5" />
@@ -56,45 +57,6 @@ const CONFIANCA = [
     icone: (
       <svg {...iconProps}>
         <path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6-4.5-4.2 6.1-.8z" />
-      </svg>
-    ),
-  },
-];
-
-// Estratégia é supply-first (sem profissional não há produto) — argumentos
-// concretos, não genéricos, pro profissional decidir se vale a pena
-// experimentar nesta fase.
-const ARGUMENTOS_PROFISSIONAL = [
-  {
-    titulo: "0% de comissão nos primeiros 90 dias.",
-    icone: (
-      <svg {...iconProps}>
-        <line x1="19" y1="5" x2="5" y2="19" />
-        <circle cx="6.5" cy="6.5" r="2.5" />
-        <circle cx="17.5" cy="17.5" r="2.5" />
-      </svg>
-    ),
-  },
-  {
-    titulo: "Você define seu preço, seus horários e quem atende.",
-    icone: (
-      <svg {...iconProps}>
-        <rect x="3" y="5" width="18" height="16" rx="2" />
-        <line x1="3" y1="10" x2="21" y2="10" />
-        <path d="M8 15l2 2 4-4" />
-      </svg>
-    ),
-  },
-  {
-    titulo: "Sem exclusividade. Sua agenda continua sendo sua.",
-    icone: (
-      <svg {...iconProps}>
-        <line x1="4" y1="6" x2="20" y2="6" />
-        <circle cx="9" cy="6" r="2" />
-        <line x1="4" y1="12" x2="20" y2="12" />
-        <circle cx="15" cy="12" r="2" />
-        <line x1="4" y1="18" x2="20" y2="18" />
-        <circle cx="9" cy="18" r="2" />
       </svg>
     ),
   },
@@ -295,10 +257,20 @@ export default async function Home() {
               <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
                 {cidadePiloto}
               </span>
-              <h1 className="max-w-xl font-display text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
+              {/* text-shadow, não só o overlay de fundo — o overlay sozinho
+                  ainda deixa o texto raso onde a foto atrás tem trecho
+                  claro (janela, parede); a sombra reforça o contorno da
+                  letra em qualquer fundo por baixo. */}
+              <h1
+                className="max-w-xl font-display text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl"
+                style={{ textShadow: "0 2px 10px rgba(0,0,0,0.55)" }}
+              >
                 O melhor horário pra cuidar de você é o seu.
               </h1>
-              <p className="max-w-xl text-lg leading-7 text-white/90">
+              <p
+                className="max-w-xl text-lg leading-7 text-white/90"
+                style={{ textShadow: "0 1px 6px rgba(0,0,0,0.55)" }}
+              >
                 Personal trainer, massagem e pilates com profissionais verificados — no seu bairro, no seu
                 tempo.
               </p>
@@ -344,7 +316,7 @@ export default async function Home() {
         <section className="border-y border-border bg-white">
           <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
             <h2 className="font-display text-2xl font-semibold tracking-tight">
-              Ninguém aparece aqui sem passar por isso
+              Identidade, registro e avaliação — conferidos antes de aparecer aqui
             </h2>
             <div className="mt-8 grid gap-4 sm:grid-cols-3">
               {CONFIANCA.map((item) => (
@@ -366,42 +338,26 @@ export default async function Home() {
       {/* Estratégia é supply-first (sem profissional não há produto) —
           fundo tingido (bg-primary-light) pra separar visualmente do
           funil de cliente (seções brancas ao redor), fala com outro
-          público. */}
+          público. Enxuta de propósito (título + uma linha + CTA) — os
+          três argumentos e a foto foram pra /sou-profissional, uma
+          página própria com espaço de verdade pra explicar como
+          funciona, em vez de competir por atenção com o funil de
+          cliente bem no meio da landing. */}
       <RevealOnScroll>
         <section className="border-y border-border bg-primary-light">
-          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
-            <div className="grid gap-8 md:grid-cols-2 md:items-center">
-              <div className="relative h-56 w-full overflow-hidden rounded-2xl sm:h-72">
-                <Image
-                  src="/images/profissional.jpg"
-                  alt="Profissional de bem-estar"
-                  fill
-                  sizes="(min-width: 768px) 50vw, 100vw"
-                  className="object-cover"
-                />
-              </div>
-              <div>
-                <h2 className="font-display text-2xl font-semibold tracking-tight">
-                  Você cuida de gente. A gente cuida do resto.
-                </h2>
-                <div className="mt-6 flex flex-col gap-4">
-                  {ARGUMENTOS_PROFISSIONAL.map((item) => (
-                    <div key={item.titulo} className="flex items-start gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-primary">
-                        {item.icone}
-                      </span>
-                      <p className="pt-1.5 text-sm font-semibold leading-6 text-foreground">{item.titulo}</p>
-                    </div>
-                  ))}
-                </div>
-                <Link
-                  href="/cadastro"
-                  className="mt-8 inline-block rounded-full border border-primary px-6 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
-                >
-                  Quero atender no SaúdeAgora
-                </Link>
-              </div>
-            </div>
+          <div className="mx-auto max-w-6xl px-4 py-14 text-center sm:px-6">
+            <h2 className="font-display text-2xl font-semibold tracking-tight">
+              Você cuida de gente. A gente cuida do resto.
+            </h2>
+            <p className="mt-2 text-foreground/70">
+              Comissão zero no período fundador, você define preço e agenda, sem exclusividade.
+            </p>
+            <Link
+              href="/sou-profissional"
+              className="mt-6 inline-block rounded-full border border-primary px-6 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
+            >
+              Quero atender no SaúdeAgora
+            </Link>
           </div>
         </section>
       </RevealOnScroll>

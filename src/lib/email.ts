@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { AJUDA_EMAIL } from "@/lib/contato";
 
 const FROM = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -68,5 +69,26 @@ export function avisarPedidoRecusado({
     to: clienteEmail,
     subject: "Seu pedido de agendamento foi recusado",
     text: `${professionalNome} não pôde confirmar seu pedido dessa vez. Busque outro profissional no SaúdeAgora: ${APP_URL}/buscar`,
+  });
+}
+
+// Justificativa opcional no rodapé de "Desativar conta" (sem fricção
+// artificial: campo não obrigatório, não bloqueia nem atrasa a
+// desativação em si) — repassada como sinal qualitativo pro e-mail de
+// suporte, não guardada em coluna nova no banco (é feedback pontual, não
+// um dado da própria conta).
+export function avisarDesativacaoConta({
+  nome,
+  email,
+  motivo,
+}: {
+  nome: string;
+  email: string;
+  motivo: string;
+}) {
+  return enviarEmail({
+    to: AJUDA_EMAIL,
+    subject: `Conta desativada: ${nome}`,
+    text: `${nome} (${email}) desativou a conta e deixou o seguinte motivo:\n\n${motivo}`,
   });
 }

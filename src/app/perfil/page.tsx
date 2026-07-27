@@ -7,6 +7,8 @@ import { ConfirmarAcaoButton } from "@/components/confirmar-acao-button";
 import { sair, desativarConta, reativarConta, excluirContaPermanentemente } from "./actions";
 import { AdicionarServicoForm } from "./adicionar-servico-form";
 import { ListaServicos } from "./lista-servicos";
+import { BaixarDadosButton } from "./baixar-dados-button";
+import { DesativarContaForm } from "./desativar-conta-form";
 import { AJUDA_EMAIL } from "@/lib/contato";
 
 function ItemMenu({
@@ -158,14 +160,7 @@ export default async function PerfilPage() {
             <ItemMenu href="/perfil/indicar" icone={PerfilIcons.indicar} label="Indique amigos" />
             <ItemMenu href="/perfil/seguranca" icone={PerfilIcons.seguranca} label="Segurança" />
             <ItemMenu href="/perfil/notificacoes" icone={PerfilIcons.notificacoes} label="Notificações" />
-            <a
-              href="/perfil/dados"
-              className="flex items-center gap-3 border-t border-border px-5 py-4 text-sm font-medium transition-colors hover:bg-primary-light"
-            >
-              <span className="text-foreground/50">{PerfilIcons.baixar}</span>
-              <span className="flex-1">Baixar meus dados</span>
-              <span className="text-foreground/40">›</span>
-            </a>
+            <BaixarDadosButton />
           </div>
         </>
       )}
@@ -218,17 +213,7 @@ export default async function PerfilPage() {
           sempre visível, ativa ou não — desativar não deveria tirar o
           acesso a deslogar. */}
       <div className="mt-6 flex flex-col overflow-hidden rounded-2xl border border-border bg-white">
-        {contaAtiva && (
-          <form action={desativarConta}>
-            <ConfirmarAcaoButton
-              mensagemConfirmacao="Sua conta fica pausada: sai da busca (se profissional) mas seus dados continuam salvos e você pode reativar quando quiser. Confirmar?"
-              className="flex w-full items-center gap-3 px-5 py-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary-light"
-            >
-              <span className="text-foreground/50">{PerfilIcons.pausar}</span>
-              <span>Desativar conta</span>
-            </ConfirmarAcaoButton>
-          </form>
-        )}
+        {contaAtiva && <DesativarContaForm action={desativarConta} nome={nome} />}
         <form action={sair} className={contaAtiva ? "border-t border-border" : undefined}>
           <ConfirmarAcaoButton
             mensagemConfirmacao="Sair da sua conta?"
