@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BotaoConversar } from "@/components/botao-conversar";
 import {
@@ -78,7 +79,7 @@ export default async function AgendaPage({
 
   const { data: professional } = await supabase
     .from("professionals")
-    .select("id")
+    .select("id, status")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -154,6 +155,18 @@ export default async function AgendaPage({
 
   const { horaMin, horaMax } = calcularFaixaHoras();
 
+  // Falha silenciosa real, achada em auditoria: um profissional aprovado
+  // sem NENHUM serviço ativo (nunca cadastrou, ou cadastrou e desativou
+  // todos — ver ListaServicos/desativarServico em /perfil) simplesmente
+  // não aparece em lugar nenhum da busca pública (services_select_public_approved
+  // e professionais_publicos dependem de existir serviço ativo pra fazer
+  // sentido aparecer), sem nenhum aviso — a pessoa acha que está tudo
+  // certo e só espera pedido nunca chegar. `.every()` num array vazio
+  // retorna true, cobre os dois casos (nunca cadastrou / cadastrou e
+  // desativou tudo) com a mesma checagem.
+  const semServicoAtivo = (servicos ?? []).every((s) => !s.ativo);
+  const invisivelNaBusca = professional.status === "aprovado" && semServicoAtivo;
+
   // Nome do cliente por horário reservado (só pro que aparece nesta
   // semana) — mesmo fuso já tratado em componentesDataHoraSP, nunca ler
   // o componente UTC cru do timestamptz.
@@ -228,6 +241,26 @@ export default async function AgendaPage({
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+      {/* Destacado e persistente de propósito — não some sozinho, só
+          quando o profissional resolver o motivo real (ativar/cadastrar
+          um serviço). Fica acima de tudo, inclusive dos pedidos
+          pendentes: se a pessoa está invisível na busca, isso é mais
+          urgente que qualquer outra coisa nesta tela. */}
+      {invisivelNaBusca && (
+        <div className="mb-6 rounded-2xl border border-accent bg-accent/10 p-5">
+          <p className="font-display font-semibold text-accent">Você ainda não aparece nas buscas</p>
+          <p className="mt-1 text-sm text-foreground/70">
+            Cadastre pelo menos um serviço para começar a receber pedidos.
+          </p>
+          <Link
+            href="/perfil"
+            className="mt-3 inline-block rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
+          >
+            Adicionar serviço
+          </Link>
+        </div>
+      )}
+
       <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
         Sua agenda
       </span>
