@@ -28,7 +28,35 @@ export default async function AgendarPage({
     .select("id")
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!client) redirect(`/registrar?next=${encodeURIComponent(currentPath)}`);
+  if (!client) {
+    // Antes mandava direto pra /registrar, que sempre tenta CRIAR uma
+    // conta nova (signUp) — se quem clicou aqui já é profissional
+    // (sessão ativa, só não tem linha em clients), isso ou colide no
+    // mesmo e-mail ("já existe conta") ou cria uma segunda conta, o que
+    // este app não suporta (ver comentário em site-header.tsx). Checa
+    // isso primeiro e mostra uma explicação em vez de empurrar pro
+    // formulário de criar conta.
+    const { data: professional } = await supabase
+      .from("professionals")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (professional) {
+      return (
+        <div className="mx-auto max-w-md px-4 py-16 sm:px-6">
+          <h1 className="font-display text-2xl font-bold tracking-tight">
+            Esta conta é de profissional
+          </h1>
+          <p className="mt-3 text-base leading-7 text-foreground/70">
+            Agendamentos são feitos com uma conta de cliente, separada da conta de profissional.
+            Esta fase do SaúdeAgora ainda não permite que a mesma pessoa tenha as duas contas ao
+            mesmo tempo.
+          </p>
+        </div>
+      );
+    }
+    redirect(`/registrar?next=${encodeURIComponent(currentPath)}`);
+  }
 
   const { data: professional } = await supabase
     .from("professionais_publicos")
