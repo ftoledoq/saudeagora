@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 // real (getSession) via Promise.all — quando a sessão resolve rápido, o
 // mínimo é quem segura a splash; quando demora mais, é o carregamento real
 // quem segura, sem teto artificial.
-const DURACAO_MINIMA_MS = 550;
+const DURACAO_MINIMA_MS = 2000;
 const DURACAO_FADE_MS = 300;
 
 // sessionStorage, não um estado em memória: precisa sobreviver a um reload
