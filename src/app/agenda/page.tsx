@@ -199,6 +199,13 @@ export default async function AgendaPage({
     }
   }
 
+  // Interseção com a semana exibida — excecoes já vem filtrado a partir de
+  // hoje (query acima), então basta restringir ao intervalo desta semana
+  // pra saber quais cabeçalhos de dia marcar como bloqueados na grade.
+  const diasBloqueados = (excecoes ?? [])
+    .map((e) => e.data)
+    .filter((data) => data >= semanaInicio && data <= semanaFim);
+
   const semanaAnteriorIso = somarDias(semanaInicio, -7);
   const hrefSemanaAnterior =
     semanaAnteriorIso >= semanaAtualInicio ? `/agenda?semana=${semanaAnteriorIso}` : null;
@@ -436,6 +443,7 @@ export default async function AgendaPage({
         <p className="mt-1 text-sm text-foreground/60">
           Toque um horário livre pra marcar disponibilidade, ou num já
           marcado pra desmarcar. Horários já reservados aparecem em cinza.
+          Toque na data no topo da coluna pra bloquear o dia inteiro.
         </p>
 
         <div className="mt-4">
@@ -446,6 +454,7 @@ export default async function AgendaPage({
             horaMax={horaMax}
             celulas={celulas}
             celulasCobertas={celulasCobertas}
+            diasBloqueados={diasBloqueados}
             hrefSemanaAnterior={hrefSemanaAnterior}
             hrefSemanaProxima={hrefSemanaProxima}
             rotuloSemana={rotuloSemana(diasIso)}

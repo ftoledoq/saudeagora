@@ -8,6 +8,8 @@ import {
   salvarPadraoRecorrente,
   removerDisponibilidade,
   removerRegraRecorrente,
+  adicionarExcecao,
+  removerExcecao,
 } from "./actions";
 import {
   corServico,
@@ -48,7 +50,8 @@ type Selecao =
   | { modo: "ver_reservado"; celula: CelulaOcupada; data: string }
   | { modo: "bulk_escolher_servico" }
   | { modo: "bulk_confirmar"; serviceId: string }
-  | { modo: "oferecer_parar_padrao"; diaSemana: number; horaInicio: string };
+  | { modo: "oferecer_parar_padrao"; diaSemana: number; horaInicio: string }
+  | { modo: "confirmar_bloqueio_dia"; data: string; jaBloqueado: boolean };
 
 // Painel simples que sobe do rodapé — mesmo padrão visual já usado no
 // bottom sheet de pin do mapa em /buscar (visao-busca.tsx): fundo branco,
@@ -97,6 +100,7 @@ export function GradeSemanal({
   horaMax,
   celulas,
   celulasCobertas,
+  diasBloqueados,
   hrefSemanaAnterior,
   hrefSemanaProxima,
   rotuloSemana,
@@ -107,6 +111,7 @@ export function GradeSemanal({
   horaMax: number;
   celulas: Record<string, CelulaOcupada>;
   celulasCobertas: string[];
+  diasBloqueados: string[];
   hrefSemanaAnterior: string | null;
   hrefSemanaProxima: string;
   rotuloSemana: string;
@@ -130,6 +135,7 @@ export function GradeSemanal({
   const [pending, startTransition] = useTransition();
 
   const cobertasSet = new Set(celulasCobertas);
+  const bloqueadosSet = new Set(diasBloqueados);
   const indicePorServico = new Map(servicos.map((s, i) => [s.id, i]));
   const horas = Array.from({ length: horaMax - horaMin + 1 }, (_, i) => horaMin + i);
   // Serviço desativado (ver /perfil) some dos seletores de "escolher
@@ -297,6 +303,42 @@ export function GradeSemanal({
 
   function tocarCelulaReservada(celula: CelulaOcupada, data: string) {
     setSelecao({ modo: "ver_reservado", celula, data });
+  }
+
+  // Atalho pedido depois da grade por célula já estar no ar: bloquear o
+  // dia inteiro (folga, imprevisto) exigia rolar até o formulário
+  // "Bloquear um período" mais abaixo na página e digitar a mesma data que
+  // já está bem na frente no cabeçalho da coluna. Tocar a própria data
+  // reaproveita adicionarExcecao/removerExcecao (mesmo mecanismo do
+  // formulário de período — um dia é só um período de um dia só), só muda
+  // o ponto de entrada.
+  function tocarCabecalhoDia(data: string) {
+    setErro(null);
+    setSelecao({ modo: "confirmar_bloqueio_dia", data, jaBloqueado: bloqueadosSet.has(data) });
+  }
+
+  function confirmarBloqueioDia() {
+    if (selecao.modo !== "confirmar_bloqueio_dia") return;
+    const { data, jaBloqueado } = selecao;
+    fechar();
+    startTransition(async () => {
+      if (jaBloqueado) {
+        try {
+          const fd = new FormData();
+          fd.append("data_inicio", data);
+          fd.append("data_fim", data);
+          await removerExcecao(fd);
+        } catch (e) {
+          setErro(e instanceof Error ? e.message : "Não foi possível desbloquear o dia.");
+        }
+      } else {
+        const fd = new FormData();
+        fd.append("data_inicio", data);
+        const resultado = await adicionarExcecao(fd);
+        if (resultado.error) setErro(resultado.error);
+      }
+      router.refresh();
+    });
   }
 
   function abrirMarcarTudo() {
@@ -527,14 +569,32 @@ export function GradeSemanal({
           style={{ gridTemplateColumns: `52px repeat(7, minmax(84px, 1fr))` }}
         >
           <div className="sticky left-0 z-10 border-b border-r border-border bg-white" />
-          {diasIso.map((data) => (
-            <div key={data} className="border-b border-border bg-white px-1 py-2 text-center">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
-                {diaSemanaAbrev(data)}
-              </p>
-              <p className="font-display text-sm font-bold">{diaDoMes(data)}</p>
-            </div>
-          ))}
+          {diasIso.map((data) => {
+            const bloqueado = bloqueadosSet.has(data);
+            return (
+              <button
+                key={data}
+                type="button"
+                disabled={pending}
+                onClick={() => tocarCabecalhoDia(data)}
+                title={bloqueado ? "Dia bloqueado — toque para desbloquear" : "Toque para bloquear o dia inteiro"}
+                className={`border-b border-border px-1 py-2 text-center transition-colors disabled:opacity-50 ${
+                  bloqueado ? "bg-error-light hover:bg-error-light/70" : "bg-white hover:bg-primary-light/50"
+                }`}
+              >
+                <p
+                  className={`text-[10px] font-semibold uppercase tracking-wide ${
+                    bloqueado ? "text-error" : "text-foreground/50"
+                  }`}
+                >
+                  {diaSemanaAbrev(data)}
+                </p>
+                <p className={`font-display text-sm font-bold ${bloqueado ? "text-error" : ""}`}>
+                  {diaDoMes(data)}
+                </p>
+              </button>
+            );
+          })}
 
           {horas.map((h) => {
             const horaLabel = `${String(h).padStart(2, "0")}:00`;
@@ -548,15 +608,34 @@ export function GradeSemanal({
                   if (cobertasSet.has(chave)) return null;
 
                   const ocupada = celulas[chave];
+                  const diaBloqueado = bloqueadosSet.has(data);
 
+                  // Dia bloqueado nunca tem célula "ocupada" aqui (o
+                  // bloqueio já apaga os horários livres do período — ver
+                  // adicionarExcecao), então toda célula vazia desse dia
+                  // cai neste branch. Esmaece em vez de deixar em branco
+                  // igual a um dia comum — pedido depois de testar um
+                  // bloqueio de período longo, onde a semana toda ficava
+                  // visualmente idêntica a "nada marcado ainda", sem dar
+                  // pra distinguir de longe "bloqueado" de "esqueci de
+                  // marcar". Toque aqui reabre o mesmo painel do
+                  // cabeçalho (oferece desbloquear) em vez do fluxo de
+                  // escolher serviço, que o servidor rejeitaria mesmo.
                   if (!ocupada) {
                     return (
                       <button
                         key={chave}
                         type="button"
                         disabled={pending}
-                        onClick={() => tocarCelulaVazia(data, horaLabel)}
-                        className="min-h-[52px] border-b border-l border-border bg-white transition-colors hover:bg-primary-light/50 disabled:opacity-50"
+                        onClick={() =>
+                          diaBloqueado ? tocarCabecalhoDia(data) : tocarCelulaVazia(data, horaLabel)
+                        }
+                        title={diaBloqueado ? "Dia bloqueado" : undefined}
+                        className={`min-h-[52px] border-b border-l border-border transition-colors disabled:opacity-50 ${
+                          diaBloqueado
+                            ? "bg-error-light/40 bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgba(0,0,0,0.04)_6px,rgba(0,0,0,0.04)_12px)] hover:bg-error-light/60"
+                            : "bg-white hover:bg-primary-light/50"
+                        }`}
                       />
                     );
                   }
@@ -691,6 +770,38 @@ export function GradeSemanal({
               className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
             >
               Só esta semana
+            </button>
+          </div>
+        </PainelInferior>
+      )}
+
+      {selecao.modo === "confirmar_bloqueio_dia" && (
+        <PainelInferior
+          titulo={selecao.jaBloqueado ? "Desbloquear esse dia?" : "Bloquear o dia inteiro?"}
+          onFechar={fechar}
+        >
+          <p className="text-sm text-foreground/70">
+            {diaSemanaAbrev(selecao.data)} {diaDoMes(selecao.data)}
+            {selecao.jaBloqueado
+              ? " — você não recebe pedido nesse dia. Desbloquear libera de novo os horários do seu padrão."
+              : " — nenhum horário livre desse dia fica disponível pra cliente pedir. Horários já reservados continuam de pé."}
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={confirmarBloqueioDia}
+              className={`flex-1 rounded-full px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 ${
+                selecao.jaBloqueado ? "bg-primary" : "bg-error"
+              }`}
+            >
+              {selecao.jaBloqueado ? "Desbloquear" : "Bloquear o dia"}
+            </button>
+            <button
+              type="button"
+              onClick={fechar}
+              className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
+            >
+              Cancelar
             </button>
           </div>
         </PainelInferior>
