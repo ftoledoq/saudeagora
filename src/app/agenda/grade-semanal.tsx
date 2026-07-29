@@ -317,25 +317,36 @@ export function GradeSemanal({
     setSelecao({ modo: "confirmar_bloqueio_dia", data, jaBloqueado: bloqueadosSet.has(data) });
   }
 
-  function confirmarBloqueioDia() {
+  // Duas ações explícitas, sempre as duas oferecidas juntas (independente
+  // do dia já estar bloqueado ou não) — decisão tomada depois de um
+  // primeiro rascunho que só mostrava uma opção (a oposta do estado
+  // atual), confuso porque exigia já saber o estado do dia antes de tocar
+  // nele pra prever o que ia aparecer.
+  function bloquearDia() {
     if (selecao.modo !== "confirmar_bloqueio_dia") return;
-    const { data, jaBloqueado } = selecao;
+    const { data } = selecao;
     fechar();
     startTransition(async () => {
-      if (jaBloqueado) {
-        try {
-          const fd = new FormData();
-          fd.append("data_inicio", data);
-          fd.append("data_fim", data);
-          await removerExcecao(fd);
-        } catch (e) {
-          setErro(e instanceof Error ? e.message : "Não foi possível desbloquear o dia.");
-        }
-      } else {
+      const fd = new FormData();
+      fd.append("data_inicio", data);
+      const resultado = await adicionarExcecao(fd);
+      if (resultado.error) setErro(resultado.error);
+      router.refresh();
+    });
+  }
+
+  function liberarDia() {
+    if (selecao.modo !== "confirmar_bloqueio_dia") return;
+    const { data } = selecao;
+    fechar();
+    startTransition(async () => {
+      try {
         const fd = new FormData();
         fd.append("data_inicio", data);
-        const resultado = await adicionarExcecao(fd);
-        if (resultado.error) setErro(resultado.error);
+        fd.append("data_fim", data);
+        await removerExcecao(fd);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Não foi possível liberar o dia.");
       }
       router.refresh();
     });
@@ -776,30 +787,36 @@ export function GradeSemanal({
       )}
 
       {selecao.modo === "confirmar_bloqueio_dia" && (
-        <PainelInferior
-          titulo={selecao.jaBloqueado ? "Desbloquear esse dia?" : "Bloquear o dia inteiro?"}
-          onFechar={fechar}
-        >
+        <PainelInferior titulo="O que fazer com esse dia?" onFechar={fechar}>
           <p className="text-sm text-foreground/70">
-            {diaSemanaAbrev(selecao.data)} {diaDoMes(selecao.data)}
-            {selecao.jaBloqueado
-              ? " — você não recebe pedido nesse dia. Desbloquear libera de novo os horários do seu padrão."
-              : " — nenhum horário livre desse dia fica disponível pra cliente pedir. Horários já reservados continuam de pé."}
+            {diaSemanaAbrev(selecao.data)} {diaDoMes(selecao.data)} ·{" "}
+            {selecao.jaBloqueado ? "hoje está bloqueado" : "hoje está liberado"}
           </p>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-col gap-2">
             <button
               type="button"
-              onClick={confirmarBloqueioDia}
-              className={`flex-1 rounded-full px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 ${
-                selecao.jaBloqueado ? "bg-primary" : "bg-error"
-              }`}
+              onClick={liberarDia}
+              disabled={!selecao.jaBloqueado}
+              className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {selecao.jaBloqueado ? "Desbloquear" : "Bloquear o dia"}
+              Liberar o dia inteiro
             </button>
             <button
               type="button"
+              onClick={bloquearDia}
+              disabled={selecao.jaBloqueado}
+              className="w-full rounded-full bg-error px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Bloquear o dia inteiro
+            </button>
+            <p className="text-xs text-foreground/50">
+              Bloquear: nenhum horário livre desse dia fica disponível pra cliente pedir — horários já
+              reservados continuam de pé. Liberar: os horários do seu padrão voltam a aparecer.
+            </p>
+            <button
+              type="button"
               onClick={fechar}
-              className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
+              className="mt-1 w-full rounded-full border border-border px-4 py-2.5 text-sm font-medium transition-colors hover:border-primary"
             >
               Cancelar
             </button>
